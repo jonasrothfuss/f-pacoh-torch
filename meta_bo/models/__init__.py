@@ -1,2 +1,3 @@
 from .pacoh_map import PACOH_MAP_GP
-from .GPR_meta_svgd import GPRegressionMetaLearnedSVGD
+from .vanilla_gp import GPRegressionVanilla
+from .f_pacoh_map import FPACOH_MAP_GP

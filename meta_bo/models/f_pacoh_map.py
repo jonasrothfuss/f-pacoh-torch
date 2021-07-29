@@ -17,7 +17,7 @@ from config import device
 class FPACOH_MAP_GP(RegressionModelMetaLearned):
 
     def __init__(self, domain, learning_mode='both', weight_decay=0.0, feature_dim=2, num_iter_fit=10000,
-                 covar_module='NN', mean_module='NN', mean_nn_layers=(32, 32), kernel_nn_layers=(32, 32),
+                 covar_module='NN', mean_module='NN', mean_nn_layers=(32, 32, 32), kernel_nn_layers=(32, 32, 32),
                  prior_lengthscale=0.2, prior_outputscale=2.0, prior_kernel_noise=1e-3, train_data_in_kl=True,
                  num_samples_kl=20, task_batch_size=5, lr=1e-3, lr_decay=1.0, normalize_data=True,
                  prior_factor=0.1, normalization_stats=None, random_seed=None):

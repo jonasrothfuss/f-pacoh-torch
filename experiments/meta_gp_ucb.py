@@ -22,12 +22,17 @@ print('time to generate data: %.2f sec'%(time.time() - t))
 
 logging.set_verbosity(logging.INFO)
 
-# model = PACOH_MAP_GP(input_dim=meta_env.domain.d, normalization_stats=meta_env.normalization_stats,
-#                      normalize_data=True, num_iter_fit=100, weight_decay=0.01, lr=0.02,
-#                      covar_module='SE', mean_module='constant')
+MODEL = 'FPACOH'
 
-model = FPACOH_MAP_GP(domain=meta_env.domain, normalization_stats=meta_env.normalization_stats,
-                      num_iter_fit=2000, weight_decay=0.0001)
+if MODEL == 'PACOH':
+    model = PACOH_MAP_GP(input_dim=meta_env.domain.d, normalization_stats=meta_env.normalization_stats,
+                         normalize_data=True, num_iter_fit=100, weight_decay=0.01, lr=0.02,
+                         covar_module='SE', mean_module='constant')
+elif MODEL == 'FPACOH':
+    model = FPACOH_MAP_GP(domain=meta_env.domain, normalization_stats=meta_env.normalization_stats,
+                          num_iter_fit=5000, weight_decay=0.0001, prior_factor=0.5)
+else:
+    raise NotImplementedError
 
 model.meta_fit(meta_train_data, meta_valid_tuples=meta_valid_data, log_period=100)
 
