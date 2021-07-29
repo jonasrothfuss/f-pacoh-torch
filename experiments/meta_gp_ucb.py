@@ -4,7 +4,8 @@ from absl import logging
 
 from meta_bo.meta_environment import RandomBraninMetaEnv, RandomMixtureMetaEnv
 from meta_bo.algorithms.acquisition import UCB
-from meta_bo.models.pacoh_map import GPRegressionMetaLearned
+from meta_bo.models.pacoh_map import PACOH_MAP_GP
+from meta_bo.models.f_pacoh_map import FPACOH_MAP_GP
 
 import time
 t = time.time()
@@ -12,7 +13,7 @@ t = time.time()
 meta_env = RandomMixtureMetaEnv()
 meta_train_data = meta_env.generate_uniform_meta_train_data(20, 20)
 meta_valid_data = meta_env.generate_uniform_meta_valid_data(10, 10, 100)
-print(time.time() - t)
+print('time to generate data: %.2f sec'%(time.time() - t))
 
 # from matplotlib import pyplot as plt
 # for x, y in meta_train_data:
@@ -21,10 +22,13 @@ print(time.time() - t)
 
 logging.set_verbosity(logging.INFO)
 
-model = GPRegressionMetaLearned(input_dim=meta_env.domain.d, normalization_stats=meta_env.normalization_stats,
-                                normalize_data=True, num_iter_fit=100, weight_decay=0.01, lr=0.02,
-                                covar_module='SE', mean_module='constant'
-                                )
+# model = PACOH_MAP_GP(input_dim=meta_env.domain.d, normalization_stats=meta_env.normalization_stats,
+#                      normalize_data=True, num_iter_fit=100, weight_decay=0.01, lr=0.02,
+#                      covar_module='SE', mean_module='constant')
+
+model = FPACOH_MAP_GP(domain=meta_env.domain, normalization_stats=meta_env.normalization_stats,
+                      num_iter_fit=2000, weight_decay=0.0001)
+
 model.meta_fit(meta_train_data, meta_valid_tuples=meta_valid_data, log_period=100)
 
 

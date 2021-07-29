@@ -76,7 +76,7 @@ class BenchmarkEnvironment(Environment):
         return stats
 
 class BraninEnvironment(BenchmarkEnvironment):
-    domain = ContinuousDomain(np.array([-5, 0]), np.array([10, 15]))
+    domain = ContinuousDomain(np.array([-5., 0.]), np.array([10., 15.]))
 
     def __init__(self, params=None, random_state=None):
         super().__init__(noise_std=2.0, random_state=random_state)
@@ -104,7 +104,7 @@ class BraninEnvironment(BenchmarkEnvironment):
 
 
 class MixtureEnvironment(BenchmarkEnvironment):
-    domain = ContinuousDomain(np.array([-10]), np.array([10]))
+    domain = ContinuousDomain(np.array([-10.]), np.array([10.]))
 
     def __init__(self, params=None, random_state=None):
         super().__init__(noise_std=0.02, random_state=random_state)

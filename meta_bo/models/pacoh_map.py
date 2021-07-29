@@ -9,7 +9,7 @@ from meta_bo.models.util import _handle_input_dimensionality, DummyLRScheduler
 from meta_bo.models.abstract import RegressionModelMetaLearned
 from config import device
 
-class GPRegressionMetaLearned(RegressionModelMetaLearned):
+class PACOH_MAP_GP(RegressionModelMetaLearned):
 
     def __init__(self, input_dim, learning_mode='both', weight_decay=0.0, feature_dim=2, num_iter_fit=10000,
                  covar_module='NN', mean_module='NN', mean_nn_layers=(32, 32), kernel_nn_layers=(32, 32),
@@ -313,9 +313,9 @@ if __name__ == "__main__":
     torch.set_num_threads(2)
 
     for weight_decay in [0.8, 0.5, 0.4, 0.3, 0.2, 0.1]:
-        gp_model = GPRegressionMetaLearned(meta_train_data, num_iter_fit=20000, weight_decay=weight_decay, task_batch_size=2,
-                                             covar_module='NN', mean_module='NN', mean_nn_layers=NN_LAYERS,
-                                             kernel_nn_layers=NN_LAYERS)
+        gp_model = PACOH_MAP_GP(meta_train_data, num_iter_fit=20000, weight_decay=weight_decay, task_batch_size=2,
+                                covar_module='NN', mean_module='NN', mean_nn_layers=NN_LAYERS,
+                                kernel_nn_layers=NN_LAYERS)
         itrs = 0
         print("---- weight-decay =  %.4f ----"%weight_decay)
         for i in range(10):

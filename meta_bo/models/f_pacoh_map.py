@@ -1,28 +1,36 @@
 import torch
 import gpytorch
 import time
+import math
 import numpy as np
 from absl import logging
+from torch.distributions import Uniform, MultivariateNormal, kl_divergence
 
-from meta_bo.models.models import LearnedGPRegressionModel, NeuralNetwork, AffineTransformedDistribution
+from meta_bo.models.models import LearnedGPRegressionModel, NeuralNetwork, AffineTransformedDistribution, SEKernelLight
 from meta_bo.models.util import _handle_input_dimensionality, DummyLRScheduler
 from meta_bo.models.abstract import RegressionModelMetaLearned
+from meta_bo.domain import ContinuousDomain, DiscreteDomain
 from config import device
 
-class GPRegressionMetaLearned(RegressionModelMetaLearned):
 
-    def __init__(self, input_dim, learning_mode='both', weight_decay=0.0, feature_dim=2, num_iter_fit=10000,
+
+class FPACOH_MAP_GP(RegressionModelMetaLearned):
+
+    def __init__(self, domain, learning_mode='both', weight_decay=0.0, feature_dim=2, num_iter_fit=10000,
                  covar_module='NN', mean_module='NN', mean_nn_layers=(32, 32), kernel_nn_layers=(32, 32),
-                 task_batch_size=5, lr=1e-3, lr_decay=1.0, normalize_data=True,
-                 normalization_stats=None, random_seed=None):
+                 prior_lengthscale=0.2, prior_outputscale=2.0, prior_kernel_noise=1e-3, train_data_in_kl=True,
+                 num_samples_kl=20, task_batch_size=5, lr=1e-3, lr_decay=1.0, normalize_data=True,
+                 prior_factor=0.1, normalization_stats=None, random_seed=None):
 
         super().__init__(normalize_data, random_seed)
 
+        assert isinstance(domain, ContinuousDomain) or isinstance(domain, DiscreteDomain)
         assert learning_mode in ['learn_mean', 'learn_kernel', 'both', 'vanilla']
         assert mean_module in ['NN', 'constant', 'zero'] or isinstance(mean_module, gpytorch.means.Mean)
         assert covar_module in ['NN', 'SE'] or isinstance(covar_module, gpytorch.kernels.Kernel)
 
-        self.input_dim = input_dim
+        self.domain = domain
+        self.input_dim = domain.d
         self.lr, self.weight_decay, self.feature_dim = lr, weight_decay, feature_dim
         self.num_iter_fit, self.task_batch_size, self.normalize_data = num_iter_fit, task_batch_size, normalize_data
 
@@ -32,6 +40,15 @@ class GPRegressionMetaLearned(RegressionModelMetaLearned):
             noise_constraint=gpytorch.likelihoods.noise_models.GreaterThan(1e-3)).to(device)
         self.shared_parameters.append({'params': self.likelihood.parameters(), 'lr': self.lr})
         self._setup_optimizer(lr, lr_decay)
+
+        """ domain support dist & prior kernel """
+        self.prior_factor = prior_factor
+        self.domain_dist = Uniform(low=torch.from_numpy(domain.l).float(), high=torch.from_numpy(domain.u).float())
+        lengthscale = prior_lengthscale * torch.ones((1, self.input_dim))
+        self.prior_covar_module = SEKernelLight(lengthscale, output_scale=torch.tensor(prior_outputscale))
+        self.prior_kernel_noise = prior_kernel_noise
+        self.train_data_in_kl = train_data_in_kl
+        self.num_samples_kl = num_samples_kl
 
         """ ------- normalization stats & data setup  ------- """
         self._normalization_stats = normalization_stats
@@ -53,7 +70,7 @@ class GPRegressionMetaLearned(RegressionModelMetaLearned):
         for itr in range(1, n_iter + 1):
             # actual meta-training step
             task_dict_batch = self._rds.choice(task_dicts, size=self.task_batch_size)
-            loss = self._step(task_dict_batch)
+            loss = self._step(task_dict_batch, n_tasks=len(task_dicts))
             cum_loss += loss
 
             # print training stats stats
@@ -207,29 +224,75 @@ class GPRegressionMetaLearned(RegressionModelMetaLearned):
     def _dataset_to_task_dict(self, x, y):
         # a) prepare data
         x_tensor, y_tensor = self._prepare_data_per_task(x, y)
-        task_dict = {'train_x': x_tensor, 'train_y': y_tensor}
+        task_dict = {'x_train': x_tensor, 'y_train': y_tensor}
 
         # b) prepare model
-        task_dict['model'] = LearnedGPRegressionModel(task_dict['train_x'], task_dict['train_y'], self.likelihood,
+        task_dict['model'] = LearnedGPRegressionModel(task_dict['x_train'], task_dict['y_train'], self.likelihood,
                                                       learned_kernel=self.nn_kernel_map, learned_mean=self.nn_mean_fn,
                                                       covar_module=self.covar_module, mean_module=self.mean_module)
         task_dict['mll_fn'] = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, task_dict['model'])
         return task_dict
 
-    def _step(self, task_dicts):
-        assert len(task_dicts) > 0
+    def _step(self, task_dict_batch, n_tasks):
+        assert len(task_dict_batch) > 0
         loss = 0.0
         self.optimizer.zero_grad()
 
-        for task_dict in task_dicts:
-            output = task_dict['model'](task_dict['train_x'])
-            mll = task_dict['mll_fn'](output, task_dict['train_y'])
-            loss -= mll
+        for task_dict in task_dict_batch:
+            # mll term
+            output = task_dict['model'](task_dict['x_train'])
+            mll = task_dict['mll_fn'](output, task_dict['y_train'])
+
+            # kl term
+            kl = self._f_kl(task_dict)
+
+            #  terms for pre-factors
+            n = n_tasks
+            m = task_dict['x_train'].shape[0]
+
+            # loss for this batch
+            loss += - mll / (self.task_batch_size * m) + \
+                    self.prior_factor * (1 / math.sqrt(n) + 1 / (n * m)) * kl / self.task_batch_size
 
         loss.backward()
         self.optimizer.step()
         self.lr_scheduler.step()
         return loss.item()
+
+    def _sample_measurement_set(self, x_train):
+        if self.train_data_in_kl:
+            n_train_x = min(x_train.shape[0], self.num_samples_kl // 2)
+            n_rand_x = self.num_samples_kl - n_train_x
+            idx_rand = np.random.choice(x_train.shape[0], n_train_x)
+            x_kl = torch.cat([x_train[idx_rand], self.domain_dist.sample((n_rand_x,))], dim=0)
+        else:
+            x_kl = self.domain_dist.sample((self.num_samples_kl,))
+        assert x_kl.shape == (self.num_samples_kl, self.input_dim)
+        return x_kl
+
+    def _f_kl(self, task_dict):
+        with gpytorch.settings.debug(False):
+
+            # sample / construc measurement set
+            x_kl = self._sample_measurement_set(task_dict['x_train'])
+
+            # functional KL
+            dist_f_posterior = task_dict['model'](x_kl)
+            K_prior = torch.reshape(self.prior_covar_module(x_kl).evaluate(), (x_kl.shape[0], x_kl.shape[0]))
+
+            inject_noise_std = self.prior_kernel_noise
+            error_counter = 0
+            while error_counter < 5:
+                try:
+                    dist_f_prior = MultivariateNormal(torch.zeros(x_kl.shape[0]), K_prior + inject_noise_std * torch.eye(x_kl.shape[0]))
+                    return kl_divergence(dist_f_posterior, dist_f_prior)
+                except RuntimeError as e:
+                    import warnings
+                    inject_noise_std = 2 * inject_noise_std
+                    error_counter += 1
+                    warnings.warn('encoundered numerical error in computation of KL: %s '
+                                  '--- Doubling inject_noise_std to %.4f and trying again' % (str(e), inject_noise_std))
+            raise RuntimeError('Not able to compute KL')
 
     def _setup_gp_prior(self, mean_module, covar_module, learning_mode, feature_dim, mean_nn_layers, kernel_nn_layers):
 
