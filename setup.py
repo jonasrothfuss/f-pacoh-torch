@@ -21,6 +21,8 @@ setuptools.setup(
         'pyro-ppl',
         'future',
         'pandas',
-        'scipy'
+        'scipy',
+        'matplotlib',
+        'absl-py'
     ],
 )
