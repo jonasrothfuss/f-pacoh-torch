@@ -20,17 +20,24 @@ class Environment:
         raise NotImplementedError
 
 class BenchmarkEnvironment(Environment):
+    has_constraint = None
 
-    def __init__(self, noise_std=0.0, random_state=None):
+    def __init__(self, noise_std=0.0, noise_std_constr=0.0, random_state=None):
         super().__init__()
         self.min_value = None
+
         self._rds = np.random if random_state is None else random_state
         self.noise_std = noise_std
+        self.noise_std_constr = noise_std_constr
 
     def f(self, x):
         """
         Function to be implemented by actual benchmark.
         """
+        raise NotImplementedError
+
+    def q_constraint(self, x):
+        """ constraint function"""
         raise NotImplementedError
 
     def evaluate(self, x, x_bp=None):
@@ -41,6 +48,11 @@ class BenchmarkEnvironment(Environment):
 
         evaluation['y_std'] = self.noise_std
         evaluation['y'] = evaluation['y_exact'] + self.noise_std * self._rds.normal(0, 1)
+
+        if self.has_constraint:
+            evaluation['q_excact'] = np.asscalar(self.q_constraint(x))
+            evaluation['q_std'] = self.noise_std_constr
+            evaluation['q'] = evaluation['q_excact'] + self.noise_std_constr * self._rds.normal(0, 1)
 
         if x_bp is not None:
             evaluation['x_bp'] = x_bp
@@ -75,10 +87,30 @@ class BenchmarkEnvironment(Environment):
         }
         return stats
 
+    @property
+    def normalization_stats_constr(self):
+        assert self.has_constraint
+        if isinstance(self.domain, ContinuousDomain):
+            x_points = np.random.uniform(self.domain.l, self.domain.u, size=(1000 * self.domain.d**2, self.domain.d))
+        elif isinstance(self.domain, DiscreteDomain):
+            x_points = self.domain.points
+        else:
+            raise NotImplementedError
+        ys = self.q_constraint(x_points)
+        y_min, y_max = np.min(ys), np.max(ys)
+        stats = {
+            'x_mean': np.mean(x_points, axis=0),
+            'x_std': np.std(x_points, axis=0),
+            'y_mean': (y_max + y_min) / 2.,
+            'y_std': (y_max - y_min) / 5.0
+        }
+        return stats
+
 class BraninEnvironment(BenchmarkEnvironment):
     domain = ContinuousDomain(np.array([-5., 0.]), np.array([10., 15.]))
+    has_constraint = False
 
-    def __init__(self, params=None, random_state=None):
+    def __init__(self, params=None, constr_params=None, random_state=None):
         super().__init__(noise_std=2.0, random_state=random_state)
         if params is not None:
             assert set(params.keys()) == {'a', 'b', 'c', 'r', 's', 't'}
@@ -105,8 +137,9 @@ class BraninEnvironment(BenchmarkEnvironment):
 
 class MixtureEnvironment(BenchmarkEnvironment):
     domain = ContinuousDomain(np.array([-10.]), np.array([10.]))
+    has_constraint = True
 
-    def __init__(self, params=None, random_state=None):
+    def __init__(self, params=None, constr_params=None, random_state=None):
         super().__init__(noise_std=0.02, random_state=random_state)
         if params is not None:
             assert set(params.keys()) == {'loc1', 'loc2', 'loc3', 'scales'}
@@ -116,6 +149,12 @@ class MixtureEnvironment(BenchmarkEnvironment):
         self._construct_f_from_params(self._params)
         self.min_value = self._determine_minimum()
 
+        if constr_params is not None:
+            assert set(params.keys()) == {'loc1', 'loc2', 'loc3', 'scales'}
+            self._constr_params = constr_params
+        else:
+            self._constr_params = {'loc1': -4, 'loc2': 8, 'scales': np.ones(2)}
+        self._construct_q_from_params(self._constr_params)
 
     def _construct_f_from_params(self, params):
         def fun(x):
@@ -129,3 +168,13 @@ class MixtureEnvironment(BenchmarkEnvironment):
                    params['scales'][2] * 1.8 * cauchy3 - 1
         self.f = fun
 
+    def _construct_q_from_params(self, params):
+        def constr_fun(x):
+            d = self.domain.d
+            x = np.reshape(x, (x.shape[0], d))
+            cauchy1 = 1 / (np.pi * (1 + (np.linalg.norm(x - params['loc1'], axis=-1) / d) ** 2))
+            gaussian = 1 / np.sqrt(2 * np.pi) * np.exp(
+                - 0.5 * (np.linalg.norm(x - params['loc2'], axis=-1) / (d * 2)) ** 2)
+            #cauchy3 = 1 / (np.pi * (1 + (np.linalg.norm(x - params['loc3'], axis=-1) / (d * 4)) ** 2))
+            return - params['scales'][0] * 2. * cauchy1 - 2 * params['scales'][1] * gaussian  + 0.5
+        self.q_constraint = constr_fun

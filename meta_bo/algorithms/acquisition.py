@@ -59,3 +59,15 @@ class UCB(AcquisitionAlgorithm):
     def acquisition(self, x):
         pred_mean, pred_std = self.model.predict_mean_std(x)
         return pred_mean - self.beta * pred_std  # since we minimize f - we want to minimize the LCB
+
+
+class GooseUCB(UCB):
+
+    def __init__(self, model_target, model_constr, domain, beta=2.0, **kwargs):
+        super().__init__(model_target, domain, beta=2.0, **kwargs)
+        self.beta = beta
+        self.model_constr = model_constr
+
+    def add_data(self, X, y, q):
+        self.model.add_data(X, y)
+        self.model_constr.add_data(X, q)
