@@ -9,7 +9,7 @@ __pycache__/
 # Experiment data
 runs/
 febo-doc/runs/
-meta_data/
+data/
 
 # Distribution / packaging
 .Python
@@ -132,7 +132,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-/meta_data/
+/data/
 /results/
 /run_experiments/regression_experiments/
 /febo/models/images/
