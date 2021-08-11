@@ -1,6 +1,10 @@
 import numpy as np
-from .domain import ContinuousDomain, DiscreteDomain
-from .solver import EvolutionarySolver
+import os
+import time
+
+from meta_bo.domain import ContinuousDomain, DiscreteDomain
+from meta_bo.solver import EvolutionarySolver
+from config import BASE_DIR
 
 from functools import lru_cache
 
@@ -134,7 +138,6 @@ class BraninEnvironment(BenchmarkEnvironment):
                     params['s'] * (1 - params['t']) * np.cos(x1) + params['s'])
         self.f = fun
 
-
 class MixtureEnvironment(BenchmarkEnvironment):
     domain = ContinuousDomain(np.array([-10.]), np.array([10.]))
     has_constraint = True
@@ -178,3 +181,86 @@ class MixtureEnvironment(BenchmarkEnvironment):
             #cauchy3 = 1 / (np.pi * (1 + (np.linalg.norm(x - params['loc3'], axis=-1) / (d * 4)) ** 2))
             return - params['scales'][0] * 2. * cauchy1 - 2 * params['scales'][1] * gaussian  + 0.5
         self.q_constraint = constr_fun
+
+class ArgusSimEnvironment(Environment):
+    domain = ContinuousDomain(np.array([50., 300., 500.]), np.array([400., 1200., 4000.]))
+    has_constraint = True
+    default_params = {'Ts': 5e-5,  # Sampling time simulation in s
+                      'Ctime': 1e-3,  # Sampling time function generator (reference position - RPOS) in s
+                      'stepsize': 0.1,  # RPOS stepsize in m (max. feasible 0.2)
+                      'jerk': 1e3,  # RPOS max. jerk in m/(s^3)
+                      'acc': 10,  # RPOS max. acceleration in m/(s^2)
+                      'vmax': 0.1,  # RPOS maximum velocity in m/s
+                      'SLAFF': 0}  # Acceleration feedforward gain
+    optim_params = [
+        'SLPKP',  # Proportional gain position controller (nominal 200)
+        'SLVKP', # Proportional gain velocity controller (nominal 600)
+        'SLVKI' # Integral gain velocity controller (nominal 1000)
+    ]
+    _default_max_TV = 1.0
+
+    def __init__(self, params=None, constr_params=None, matlab_enginge=None, logspace_y=False):
+        super().__init__()
+
+        self.logspace_y = logspace_y
+
+        # deal with params
+        assert params is None or set(params.keys()) <= set(self.default_params.keys())
+        assert len(self.optim_params) == self.domain.d
+        self.params = self.default_params
+        if params is not None:
+            self.params.update(params)
+
+        # constrain params
+        if constr_params is None:
+            self._max_TV = self._default_max_TV
+        else:
+            self._max_TV = constr_params['max_TV']
+
+        os.chdir(os.path.join(BASE_DIR, 'argus_sim')) # TODO: This might be dangerous, any better idea how to solve this?
+        if matlab_enginge is None:
+            self.matlab_engine = self._setup_matlab_enginge()
+        else:
+            self.matlab_engine = matlab_enginge
+
+    @property
+    def d(self):
+        return len(self.optim_params)
+
+    def evaluate(self, x):
+        assert x.shape == (self.d,) or x.shape == (1, self.d)
+        self._t += 1
+        optim_param_dict = self._x_param_dict_map(x)
+        from argus_sim.Argus_sim import RunSim_Argus
+        T_settle, TV = RunSim_Argus(self.matlab_engine, {**self.params, **optim_param_dict})
+        if self.logspace_y:
+            T_settle = np.log(T_settle)
+        evaluation = {'x': x, 't': self._t, 'y': T_settle, 'q': - TV + self._max_TV}
+        return evaluation
+
+    def _setup_matlab_enginge(self):
+        import matlab
+        import matlab.engine
+        t_eng_start = time.time()
+        matlab_engine = matlab.engine.start_matlab()
+        matlab_engine.Argus_Parameters(nargout=0)
+        print("Engine setup time: ", time.time() - t_eng_start, "s")
+        return matlab_engine
+
+    def _x_param_dict_map(self, x):
+        x = x.squeeze()
+        return dict([(param_name, x[i]) for i, param_name in enumerate(self.optim_params)])
+
+    @property
+    def normalization_stats(self):
+        if self.logspace_y:
+            y_min, y_max = -5., 2.
+        else:
+            y_min, y_max = 0., 5.
+        stats = {
+            'x_mean': (self.domain.l + self.domain.u) / 2.0,
+            'x_std': (self.domain.u - self.domain.l) / 5.0,
+            'y_mean': np.array((y_max + y_min) / 2.),
+            'y_std': np.array((y_max - y_min) / 5.0)
+        }
+        return stats
