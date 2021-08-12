@@ -79,7 +79,6 @@ class RandomBraninMetaEnv(MetaBenchmarkEnvironment):
     env_class = BraninEnvironment
 
     def sample_env_param(self):
-
         param_dict = {'a': self._rds.uniform(0.5, 1.5),
                       'b': self._rds.uniform(0.1, 0.15),
                       'c': self._rds.uniform(1, 2),
@@ -134,7 +133,6 @@ class ArgusSimMetaEnv(MetaBenchmarkEnvironment):
                                              size=(num_points_per_task, env.domain.d))
                 y = np.array([env.evaluate(x[i, :])['y'] for i in range(num_points_per_task)])
             meta_data.append((x, y))
-        return meta_data
         return meta_data
 
     def _setup_matlab_enginge(self):

@@ -199,7 +199,7 @@ class ArgusSimEnvironment(Environment):
     ]
     _default_max_TV = 1.0
 
-    def __init__(self, params=None, constr_params=None, matlab_enginge=None, logspace_y=False):
+    def __init__(self, params=None, constr_params=None, matlab_enginge=None, logspace_y=False, random_state=None):
         super().__init__()
 
         self.logspace_y = logspace_y
@@ -217,7 +217,6 @@ class ArgusSimEnvironment(Environment):
         else:
             self._max_TV = constr_params['max_TV']
 
-        os.chdir(os.path.join(BASE_DIR, 'argus_sim')) # TODO: This might be dangerous, any better idea how to solve this?
         if matlab_enginge is None:
             self.matlab_engine = self._setup_matlab_enginge()
         else:
@@ -241,6 +240,7 @@ class ArgusSimEnvironment(Environment):
     def _setup_matlab_enginge(self):
         import matlab
         import matlab.engine
+        os.chdir(os.path.join(BASE_DIR, 'argus_sim'))  # TODO: This might be dangerous, any better idea how to solve this?
         t_eng_start = time.time()
         matlab_engine = matlab.engine.start_matlab()
         matlab_engine.Argus_Parameters(nargout=0)
