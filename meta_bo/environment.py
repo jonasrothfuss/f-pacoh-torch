@@ -226,7 +226,7 @@ class ArgusSimEnvironment(Environment):
     def d(self):
         return len(self.optim_params)
 
-    def evaluate(self, x):
+    def evaluate(self, x, x_bp=None):
         assert x.shape == (self.d,) or x.shape == (1, self.d)
         self._t += 1
         optim_param_dict = self._x_param_dict_map(x)
@@ -235,6 +235,14 @@ class ArgusSimEnvironment(Environment):
         if self.logspace_y:
             T_settle = np.log(T_settle)
         evaluation = {'x': x, 't': self._t, 'y': T_settle, 'q': - TV + self._max_TV}
+
+        if x_bp is not None:
+            optim_param_dict_bp = self._x_param_dict_map(x_bp)
+            T_settle_bp, TV_bp = RunSim_Argus(self.matlab_engine, {**self.params, **optim_param_dict_bp})
+            if self.logspace_y:
+                T_settle_bp = np.log(T_settle_bp)
+            evaluation.update({'x_bp': x_bp, 'y_bp': T_settle_bp, 'q_bp': TV_bp})
+
         return evaluation
 
     def _setup_matlab_enginge(self):
