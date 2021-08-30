@@ -20,9 +20,9 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
                  covar_module='NN', mean_module='NN', mean_nn_layers=(32, 32, 32), kernel_nn_layers=(32, 32, 32),
                  prior_lengthscale=0.2, prior_outputscale=2.0, prior_kernel_noise=1e-3, train_data_in_kl=True,
                  num_samples_kl=20, task_batch_size=5, lr=1e-3, lr_decay=1.0, normalize_data=True,
-                 prior_factor=0.1, normalization_stats=None, random_seed=None):
+                 prior_factor=0.1, normalization_stats=None, random_state=None):
 
-        super().__init__(normalize_data, random_seed)
+        super().__init__(normalize_data, random_state)
 
         assert isinstance(domain, ContinuousDomain) or isinstance(domain, DiscreteDomain)
         assert learning_mode in ['learn_mean', 'learn_kernel', 'both', 'vanilla']

@@ -14,9 +14,9 @@ class PACOH_MAP_GP(RegressionModelMetaLearned):
     def __init__(self, input_dim, learning_mode='both', weight_decay=0.0, feature_dim=2, num_iter_fit=10000,
                  covar_module='NN', mean_module='NN', mean_nn_layers=(32, 32), kernel_nn_layers=(32, 32),
                  task_batch_size=5, lr=1e-3, lr_decay=1.0, normalize_data=True,
-                 normalization_stats=None, random_seed=None):
+                 normalization_stats=None, random_state=None):
 
-        super().__init__(normalize_data, random_seed)
+        super().__init__(normalize_data, random_state)
 
         assert learning_mode in ['learn_mean', 'learn_kernel', 'both', 'vanilla']
         assert mean_module in ['NN', 'constant', 'zero'] or isinstance(mean_module, gpytorch.means.Mean)
