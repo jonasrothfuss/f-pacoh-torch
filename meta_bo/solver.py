@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import warnings
 
 class Solver:
 
@@ -65,24 +66,27 @@ class GridSolver(CandidateSolver):
 
 class EvolutionarySolver(Solver):
 
-    def __init__(self, domain, survival_rate=0.9, num_particles_per_d=100, num_iter_per_d=30, initial_x=None,
-                 random_state=None):
+    def __init__(self, domain, survival_rate=0.9, num_particles_per_d=100, max_iter_per_d=50, initial_x=None,
+                 atol: float = 1e-8, random_state=None):
         super().__init__(domain, initial_x=initial_x)
         self.d = domain.d
         self.domain = domain
         self._rds = np.random if random_state is None else random_state
 
         self.num_particles = self.d * (num_particles_per_d if num_particles_per_d is None else num_particles_per_d)
-        self.num_iter = self.d * (num_iter_per_d if num_iter_per_d is None else num_iter_per_d)
+        self.max_iter = self.d * max_iter_per_d
         self.survival_rate = survival_rate if survival_rate is None else survival_rate
+        self._atol = atol
 
         self.max_sampling_radius = (self.domain.u - self.domain.l) * self.d / self.num_particles
 
     def minimize(self, f):
         best_f = 1e8 * np.ones(self.num_particles)
         particles = self._rds.uniform(self.domain.l, self.domain.u, size=(self.num_particles, self.domain.d))
-        for i in range(self.num_iter):
-            temp = 1 - i / self.num_iter
+        _best_f_last = 1e8
+        _counter_no_improvement = 0
+        for i in range(self.max_iter):
+            temp = 1 - i / self.max_iter
             if i > 0:
                 pertubation = temp * self.max_sampling_radius * self._uniform_sample_unit_ball()
                 particle_proposal = np.clip(particles + pertubation, self.domain.l, self.domain.u)
@@ -103,10 +107,19 @@ class EvolutionarySolver(Solver):
             new_idx = np.concatenate([sorted_idx[:-num_elimins], sorted_idx[:num_elimins]])
             best_f = best_f[new_idx]
             particles = particles[new_idx]
+            _best_f_all = np.min(best_f)
+            if _best_f_last - self._atol <= _best_f_all:
+                _counter_no_improvement += 1
+            else:
+                _counter_no_improvement = 0
+            if _counter_no_improvement >= 5:
+                break  # stop the optimization if there was no improvement for 5 consecutive iterations
+            _best_f_last = min(_best_f_last, _best_f_all)
 
+            if i >= (self.max_iter - 1):
+                warnings.warn(f'EvolutionarySolver has reached the maximum number of {self.max_iter} iterations.')
 
         best_idx = np.argmin(best_f)
-
         return particles[best_idx], best_f[best_idx]
 
     def _uniform_sample_unit_ball(self):

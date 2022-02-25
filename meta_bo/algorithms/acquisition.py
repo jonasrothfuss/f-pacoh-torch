@@ -43,7 +43,7 @@ class AcquisitionAlgorithm:
         if isinstance(domain, DiscreteDomain):
             return FiniteDomainSolver(domain)
         elif isinstance(domain, ContinuousDomain):
-            return EvolutionarySolver(domain, num_particles_per_d=100, num_iter_per_d=30)
+            return EvolutionarySolver(domain, num_particles_per_d=100, max_iter_per_d=50)
 
     def __getstate__(self):
         self_dict = self.__dict__.copy()

@@ -65,9 +65,10 @@ class BenchmarkEnvironment(Environment):
 
         return evaluation
 
-    def _determine_minimum(self, num_particles_per_d=2000, num_iter_per_d=500):
+    def _determine_minimum(self, num_particles_per_d=2000, max_iter_per_d=500):
         if isinstance(self.domain, ContinuousDomain):
-            solver = EvolutionarySolver(self.domain, num_particles_per_d=num_particles_per_d, num_iter_per_d=num_iter_per_d)
+            solver = EvolutionarySolver(self.domain, num_particles_per_d=num_particles_per_d,
+                                        max_iter_per_d=max_iter_per_d)
             solution = solver.minimize(lambda x: self.f(x))
             return solution[1]
         elif isinstance(self.domain, DiscreteDomain):
