@@ -218,6 +218,8 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
         else:
             self._set_normalization_stats(self._normalization_stats)
 
+        self.x_mean_torch = torch.from_numpy(self.x_mean).float()
+        self.x_std_torch = torch.from_numpy(self.x_std).float()
         task_dicts = [self._dataset_to_task_dict(x, y) for x, y in meta_train_tuples]
         return task_dicts
 
@@ -264,11 +266,18 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
             n_train_x = min(x_train.shape[0], self.num_samples_kl // 2)
             n_rand_x = self.num_samples_kl - n_train_x
             idx_rand = np.random.choice(x_train.shape[0], n_train_x)
-            x_kl = torch.cat([x_train[idx_rand], self.domain_dist.sample((n_rand_x,))], dim=0)
+            x_domain_dist = self._normalize_x_torch(self.domain_dist.sample((n_rand_x,)))
+            x_kl = torch.cat([x_train[idx_rand], x_domain_dist], dim=0)
         else:
-            x_kl = self.domain_dist.sample((self.num_samples_kl,))
+            x_kl = self._normalize_x_torch(self.domain_dist.sample((self.num_samples_kl,)))
         assert x_kl.shape == (self.num_samples_kl, self.input_dim)
         return x_kl
+
+    def _normalize_x_torch(self, X):
+        assert hasattr(self, "x_mean_torch") and hasattr(self, "x_std_torch"), (
+            "requires computing normalization stats beforehand")
+        x_normalized = (X - self.x_mean_torch[None, :]) / self.x_std_torch[None, :]
+        return x_normalized
 
     def _f_kl(self, task_dict):
         with gpytorch.settings.debug(False):
