@@ -2,9 +2,11 @@ import numpy as np
 import time
 import os
 
-from .environment import MixtureEnvironment, BraninEnvironment, ArgusSimEnvironment
+from .environment import (MixtureEnvironment, BraninEnvironment, ArgusSimEnvironment,
+                          ArgusDatatsetEnvironment, BenchmarkEnvironment)
 from .domain import ContinuousDomain, DiscreteDomain
 from config import BASE_DIR
+from typing import List, Dict
 
 class MetaEnvironment:
 
@@ -22,6 +24,7 @@ class MetaEnvironment:
 
 
 class MetaBenchmarkEnvironment(MetaEnvironment):
+
     env_class = None
 
     def sample_env(self):
@@ -87,6 +90,7 @@ class RandomBraninMetaEnv(MetaBenchmarkEnvironment):
                       't': self._rds.uniform(0.03, 0.05)}
         return param_dict
 
+
 class RandomMixtureMetaEnv(MetaBenchmarkEnvironment):
     env_class = MixtureEnvironment
 
@@ -100,12 +104,12 @@ class RandomMixtureMetaEnv(MetaBenchmarkEnvironment):
         }
         return param_dict
 
+
 class ArgusSimMetaEnv(MetaBenchmarkEnvironment):
     env_class = ArgusSimEnvironment
 
     def __init__(self, logspace_y=False, random_state=None):
         super().__init__(random_state=random_state)
-        self._rds = np.random if random_state is None else random_state
         self.logspace_y = logspace_y
         self.matlab_engine = self._setup_matlab_enginge()
 
@@ -158,3 +162,49 @@ class ArgusSimMetaEnv(MetaBenchmarkEnvironment):
             'y_std': np.array((y_max - y_min) / 5.0)
         }
         return stats
+
+
+class ArgusDatasetMetaEnv(MetaBenchmarkEnvironment):
+    env_class = ArgusDatatsetEnvironment
+
+    def __init__(self, logspace_y=False, random_state=None):
+        super().__init__(random_state=random_state)
+        self._rds = np.random if random_state is None else random_state
+        self.logspace_y = logspace_y
+
+        domain_data = self.env_class._load_argus_domain_data()
+        self.available_stepsizes = sorted(list(set(domain_data.keys())))
+
+    def sample_env_param(self) -> Dict:
+        return self.sample_env_params(1)[0]
+
+    def sample_env_params(self, num_envs: int) -> List[Dict]:
+        assert num_envs <= len(self.available_stepsizes)
+        sampled_stepsizes = self._rds.choice(self.available_stepsizes, size=num_envs, replace=False)
+        return [{'stepsize': s} for s in sampled_stepsizes]
+
+    def sample_envs(self, num_envs: int) -> List[BenchmarkEnvironment]:
+        env_params = self.sample_env_params(num_envs=num_envs)
+        return [self.env_class(params=p, logspace_y=self.logspace_y,
+                               random_state=self._rds)for p in env_params]
+
+    def sample_env(self) -> BenchmarkEnvironment:
+        return self.sample_envs(1)[0]
+
+    @property
+    def normalization_stats(self):
+        if self.logspace_y:
+            y_min, y_max = -5., 2.
+        else:
+            y_min, y_max = 0., 5.
+        stats = {
+            'x_mean': (self.domain.l + self.domain.u) / 2.0,
+            'x_std': (self.domain.u - self.domain.l) / 5.0,
+            'y_mean': np.array((y_max + y_min) / 2.),
+            'y_std': np.array((y_max - y_min) / 5.0)
+        }
+        return stats
+
+    @property
+    def domain(self):
+        return ArgusSimEnvironment.domain

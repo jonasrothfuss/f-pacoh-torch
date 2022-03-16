@@ -1,12 +1,15 @@
 import numpy as np
 import os
 import time
+import json
+import glob
 
 from meta_bo.domain import ContinuousDomain, DiscreteDomain
 from meta_bo.solver import EvolutionarySolver
-from config import BASE_DIR
+from config import BASE_DIR, DATA_DIR
+from typing import Optional, Dict, List
 
-from functools import lru_cache
+from functools import lru_cache, cached_property
 
 class Environment:
     domain = None
@@ -22,6 +25,7 @@ class Environment:
 
     def evaluate(self, x):
         raise NotImplementedError
+
 
 class BenchmarkEnvironment(Environment):
     has_constraint = None
@@ -111,6 +115,7 @@ class BenchmarkEnvironment(Environment):
         }
         return stats
 
+
 class BraninEnvironment(BenchmarkEnvironment):
     domain = ContinuousDomain(np.array([-5., 0.]), np.array([10., 15.]))
     has_constraint = False
@@ -138,6 +143,7 @@ class BraninEnvironment(BenchmarkEnvironment):
             return (params['a'] * (x2 - params['b'] * x1 ** 2 + params['c'] * x1 - params['r']) ** 2 +
                     params['s'] * (1 - params['t']) * np.cos(x1) + params['s'])
         self.f = fun
+
 
 class MixtureEnvironment(BenchmarkEnvironment):
     domain = ContinuousDomain(np.array([-10.]), np.array([10.]))
@@ -182,6 +188,7 @@ class MixtureEnvironment(BenchmarkEnvironment):
             #cauchy3 = 1 / (np.pi * (1 + (np.linalg.norm(x - params['loc3'], axis=-1) / (d * 4)) ** 2))
             return - params['scales'][0] * 2. * cauchy1 - 2 * params['scales'][1] * gaussian  + 0.5
         self.q_constraint = constr_fun
+
 
 class ArgusSimEnvironment(Environment):
     domain = ContinuousDomain(np.array([50., 300., 500.]), np.array([400., 1200., 4000.]))
@@ -273,3 +280,112 @@ class ArgusSimEnvironment(Environment):
             'y_std': np.array((y_max - y_min) / 5.0)
         }
         return stats
+
+
+class DatasetBanditEnvironment(BenchmarkEnvironment):
+
+    def __init__(self, data_x: np.ndarray, data_y: np.ndarray, data_q: Optional[np.ndarray] = None,
+                 noise_std: float = 0.0, random_state: Optional[np.random.RandomState] = None):
+        super().__init__(noise_std=noise_std, noise_std_constr=0.0, random_state=random_state)
+
+        assert data_x.shape[0] == data_y.shape[0]
+        assert data_y.ndim == 1 or (data_y.ndim == 2 and data_y.shape[1] == 1)
+        self.domain = DiscreteDomain(points=data_x)
+        self._data_x = data_x
+        self._data_y = data_y.reshape((-1,))
+        if data_q is None:
+            self.has_constraint = False
+            self._data_q = None
+        else:
+            assert data_q.shape[0] == data_x.shape[0]
+            self._data_q = data_q
+            self.has_constraint = True
+
+        self.min_value = np.min(self._data_y)
+
+    def f(self, x: np.ndarray):
+        idx = self._find_matching_idx(x)
+        y = self._data_y[idx]
+        return y
+
+    def q_constraint(self, x: np.ndarray):
+        assert self.has_constraint, 'Environment has no contraint'
+        idx = self._find_matching_idx(x)
+        y = self._data_q[idx]
+        return y
+
+    def _find_matching_idx(self, x: np.ndarray) -> int:
+        if x.ndim == 2 and x.shape[0] == 1:
+            x = x.reshape(x.shape[-1])
+        assert x.ndim == 1, 'can only query one point at a time'
+
+        matching_indices = np.where(np.prod(x == self._data_x, axis=-1))[0]
+        if len(matching_indices) == 1:
+            idx = matching_indices[0]
+        else:
+            idx = np.argmin(np.linalg.norm(x - self._data_x, axis=-1))
+        return idx
+
+    @property
+    def normalization_stats(self):
+        y_min, y_max = np.min(self._data_y), np.max(self._data_y)
+        stats = {
+            'x_mean': np.mean(self._data_x, axis=0),
+            'x_std': np.std(self._data_x, axis=0),
+            'y_mean': (y_max + y_min) / 2.,
+            'y_std': (y_max - y_min) / 5.0
+        }
+        return stats
+
+
+class ArgusDatatsetEnvironment(DatasetBanditEnvironment):
+
+    _argus_domain_data_dir = os.path.join(DATA_DIR, 'uniform_domain_data')
+    has_constraint = True
+    optim_params = [
+        'SLPKP',  # Proportional gain position controller (nominal 200)
+        'SLVKP', # Proportional gain velocity controller (nominal 600)
+        'SLVKI' # Integral gain velocity controller (nominal 1000)
+    ]
+    _max_TV = 1.0
+
+    def __init__(self, params: Optional[Dict] = None, logspace_y: bool = False,
+                 random_state: Optional[np.random.RandomState] = None):
+        self.logspace_y = logspace_y
+        self._all_domain_data = self._load_argus_domain_data()
+
+        if params is None:
+            stepsize = self._available_stepsizes[len(self._available_stepsizes) // 2]
+        else:
+            stepsize = params['stepsize']
+            assert stepsize in self._available_stepsizes
+
+        domain_data = self._all_domain_data[stepsize]
+        super().__init__(data_x=domain_data['x'], data_y=domain_data['y'], data_q=domain_data['q'],
+                         noise_std=0.0, random_state=random_state)
+
+    @cached_property
+    def _available_stepsizes(self) -> List[int]:
+        return sorted(list(set(self._all_domain_data.keys())))
+
+    def f(self, x: np.ndarray):
+        if self.logspace_y:
+            np.log(super().f(x))
+        else:
+            return super().f(x)
+
+    @staticmethod
+    def _load_argus_domain_data():
+        all_data_dict = {}
+        for path in glob.glob(os.path.join(ArgusDatatsetEnvironment._argus_domain_data_dir, '*.json')):
+            with open(path, 'r') as f:
+                data_dict = json.load(f)
+                del data_dict['evals']['t']
+                stepsize = data_dict['params']['stepsize']
+                if stepsize in all_data_dict:
+                    for k, v in data_dict['evals'].items():
+                        all_data_dict[stepsize][k] = np.concatenate([all_data_dict[stepsize][k],
+                                                                     np.array(v)], axis=0)
+                else:
+                    all_data_dict[stepsize] = {k: np.array(v) for k, v in data_dict['evals'].items()}
+        return all_data_dict
