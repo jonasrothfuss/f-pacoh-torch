@@ -1,5 +1,5 @@
 from meta_bo.domain import DiscreteDomain, ContinuousDomain
-from meta_bo.solver import FiniteDomainSolver, EvolutionarySolver
+from meta_bo.solver import FiniteDomainSolver, EvolutionarySolver, DoubleSolverWrapper
 
 import numpy as np
 
@@ -43,12 +43,18 @@ class AcquisitionAlgorithm:
         if isinstance(domain, DiscreteDomain):
             return FiniteDomainSolver(domain)
         elif isinstance(domain, ContinuousDomain):
-            return EvolutionarySolver(domain, num_particles_per_d=100, max_iter_per_d=50)
+            return DoubleSolverWrapper(solver=EvolutionarySolver(domain, num_particles_per_d2=500,
+                                                                 survival_rate=0.98,
+                                                                 max_iter_per_d=200, random_state=self._rds),
+                                       atol=1e-3, max_repeats=4, double_effort_at_rerun=True,
+                                       throw_precision_error=False)
+
 
     def __getstate__(self):
         self_dict = self.__dict__.copy()
         del self_dict['solver']
         return self_dict
+
 
 class UCB(AcquisitionAlgorithm):
 
