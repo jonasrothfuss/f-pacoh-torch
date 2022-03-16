@@ -5,7 +5,22 @@ import numpy as np
 from itertools import cycle
 from config import BASE_DIR, DATA_DIR
 
+""" Custom Logger """
+import sys
 
+class Logger:
+
+    def __init__(self, filename):
+        self.console = sys.stdout
+        self.file = open(filename, 'w')
+
+    def write(self, message):
+        self.console.write(message)
+        self.file.write(message)
+
+    def flush(self):
+        self.console.flush()
+        self.file.flush()
 
 """ Async executer """
 import multiprocessing
@@ -51,16 +66,22 @@ def _dummy_fun():
 
 """ Command generators """
 
-def generate_base_command(module, flags=None):
+def generate_base_command(module, flags=None, unbuffered=True):
     """ Module is a python file to execute """
     interpreter_script = sys.executable
     base_exp_script = os.path.abspath(module.__file__)
-    base_cmd = interpreter_script + ' ' + base_exp_script
+    if unbuffered:
+        base_cmd = interpreter_script + ' -u ' + base_exp_script
+    else:
+        base_cmd = interpreter_script + ' ' + base_exp_script
     if flags is not None:
         assert isinstance(flags, dict), "Flags must be provided as dict"
-        for flag in flags:
-            setting = flags[flag]
-            base_cmd += f" --{flag}={setting}"
+        for flag, setting in flags.items():
+            if type(setting) == bool:
+                if setting:
+                    base_cmd += f" --{flag}"
+            else:
+                base_cmd += f" --{flag}={setting}"
     return base_cmd
 
 
