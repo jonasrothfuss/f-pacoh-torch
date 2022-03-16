@@ -87,7 +87,9 @@ class RandomBraninMetaEnv(MetaBenchmarkEnvironment):
                       'c': self._rds.uniform(1, 2),
                       'r': self._rds.uniform(5, 7),
                       's': self._rds.uniform(8, 12),
-                      't': self._rds.uniform(0.03, 0.05)}
+                      't': self._rds.uniform(0.03, 0.05),
+                      'constr_a': self._rds.normal(2.0, 0.5),
+                      'constr_b': self._rds.uniform(0.7, 1.3)}
         return param_dict
 
 

@@ -9,7 +9,7 @@ from meta_bo.solver import EvolutionarySolver
 from config import BASE_DIR, DATA_DIR
 from typing import Optional, Dict, List
 
-from functools import lru_cache, cached_property
+from functools import cached_property
 
 class Environment:
     domain = None
@@ -69,9 +69,9 @@ class BenchmarkEnvironment(Environment):
 
         return evaluation
 
-    def _determine_minimum(self, num_particles_per_d=2000, max_iter_per_d=500):
+    def _determine_minimum(self, num_particles_per_d2=2000, max_iter_per_d=500):
         if isinstance(self.domain, ContinuousDomain):
-            solver = EvolutionarySolver(self.domain, num_particles_per_d=num_particles_per_d,
+            solver = EvolutionarySolver(self.domain, num_particles_per_d2=num_particles_per_d2,
                                         max_iter_per_d=max_iter_per_d)
             solution = solver.minimize(lambda x: self.f(x))
             return solution[1]
@@ -118,21 +118,23 @@ class BenchmarkEnvironment(Environment):
 
 class BraninEnvironment(BenchmarkEnvironment):
     domain = ContinuousDomain(np.array([-5., 0.]), np.array([10., 15.]))
-    has_constraint = False
+    has_constraint = True
 
-    def __init__(self, params=None, constr_params=None, random_state=None):
+    def __init__(self, params: Optional[Dict] = None, random_state: Optional[np.random.RandomState] = None):
         super().__init__(noise_std=2.0, random_state=random_state)
         if params is not None:
-            assert set(params.keys()) == {'a', 'b', 'c', 'r', 's', 't'}
+            assert set(params.keys()) == {'a', 'b', 'c', 'r', 's', 't', 'constr_a', 'constr_b'}
             self._params = params
             self._construct_f_from_params(self._params)
             self.min_value = 0.397887
         else:
-            self._params = {'a': 1.0, 'b': 5.1 / (4*np.pi**2), 'c': 5./np.pi, 'r': 6., 's': 10, 't': 1/(8*np.pi)}
+            self._params = {'a': 1.0, 'b': 5.1 / (4*np.pi**2), 'c': 5./np.pi, 'r': 6., 's': 10, 't': 1/(8*np.pi),
+                            'constr_a': 2.0, 'constr_b': 1.0}
             self._construct_f_from_params(self._params)
             self.min_value = self._determine_minimum()
+        self._construct_q_from_params(self._params)
 
-    def _construct_f_from_params(self, params):
+    def _construct_f_from_params(self, params: Dict):
         def fun(x):
             x = np.array(x)
             assert x.ndim <= 2
@@ -143,6 +145,20 @@ class BraninEnvironment(BenchmarkEnvironment):
             return (params['a'] * (x2 - params['b'] * x1 ** 2 + params['c'] * x1 - params['r']) ** 2 +
                     params['s'] * (1 - params['t']) * np.cos(x1) + params['s'])
         self.f = fun
+
+    def _construct_q_from_params(self, params: Dict):
+        def q(x):
+            x = np.array(x)
+            assert x.ndim <= 2
+            if x.ndim == 2:
+                x1, x2 = x[:, 0], x[:, 1]
+            else:
+                x1, x2 = x[0], x[1]
+
+            x1 = x1 / 5. - 1
+            x2 = x2 /  5. - 1
+            return params['constr_a'] * x1**2 - 1.05 * x1**4 + x1**6 / 6. + x1 * params['constr_b'] * x2 + x2**2 - 1.
+        self.q = q
 
 
 class MixtureEnvironment(BenchmarkEnvironment):
@@ -163,7 +179,7 @@ class MixtureEnvironment(BenchmarkEnvironment):
             assert set(params.keys()) == {'loc1', 'loc2', 'loc3', 'scales'}
             self._constr_params = constr_params
         else:
-            self._constr_params = {'loc1': -4, 'loc2': 8, 'scales': np.ones(2)}
+            self._constr_params = {'loc1': -5, 'loc2': 8, 'scales': np.ones(2)}
         self._construct_q_from_params(self._constr_params)
 
     def _construct_f_from_params(self, params):
@@ -186,7 +202,7 @@ class MixtureEnvironment(BenchmarkEnvironment):
             gaussian = 1 / np.sqrt(2 * np.pi) * np.exp(
                 - 0.5 * (np.linalg.norm(x - params['loc2'], axis=-1) / (d * 2)) ** 2)
             #cauchy3 = 1 / (np.pi * (1 + (np.linalg.norm(x - params['loc3'], axis=-1) / (d * 4)) ** 2))
-            return - params['scales'][0] * 2. * cauchy1 - 2 * params['scales'][1] * gaussian  + 0.5
+            return params['scales'][0] * 2. * cauchy1 + 2 * params['scales'][1] * gaussian - 0.4
         self.q_constraint = constr_fun
 
 
