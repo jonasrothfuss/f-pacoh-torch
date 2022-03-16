@@ -16,7 +16,6 @@ STORAGE_DIR_UNIFORM = os.path.join(DATA_DIR, 'uniform_meta_data')
 SEED = 6783
 
 def generate_uniform_points(env, num_samples, rds):
-    print(env._params)
     if isinstance(env.domain, ContinuousDomain):
         x = rds.uniform(env.domain.l, env.domain.u,
                                   size=(num_samples, env.domain.d))
@@ -53,18 +52,18 @@ def generate_gp_ucb_points(env, num_samples, kernel_lengthscale=0.1, rds=None):
 
 """ load meta data """
 
-def load_meta_data(path):
+def load_meta_data(path, num_tasks, num_samples):
     with open(path, 'r') as f:
         meta_data_json = json.load(f)
     has_q = all(['q' in task_dict['evals'] for task_dict in meta_data_json])
     meta_data_target, meta_data_q = [], []
-    for task_dict in meta_data_json:
+    for task_dict in meta_data_json[:num_tasks]:
         task_evals = task_dict['evals']
-        x = np.array(task_evals['x'])
-        y = np.array(task_evals['y'])
+        x = np.array(task_evals['x'][:num_samples])
+        y = np.array(task_evals['y'][:num_samples])
         meta_data_target.append((x, y))
         if has_q:
-            q = np.array(task_evals['q'])
+            q = np.array(task_evals['q'][:num_samples])
             meta_data_q.append((x, q))
 
     if has_q:
@@ -77,11 +76,10 @@ def get_meta_data(env, num_tasks, num_samples, gp=True, kernel_lengthscale=0.2):
     files = glob.glob(os.path.join(storage_dir, '%s_*_tasks_*samples.json'%env))
     filtered_files = [file for file in files if int(file.split('_')[-4]) >= num_tasks and int(file.split('_')[-2]) >= num_samples]
     if len(filtered_files) > 0:
-        return load_meta_data(filtered_files[0])
+        return load_meta_data(filtered_files[0], num_tasks, num_samples)
     else:
         meta_data_file = generate_meta_data(env, num_tasks, num_samples, gp=gp)
         return load_meta_data(meta_data_file)
-
 
 def generate_meta_data(env_name, num_tasks, num_samples, gp=True, kernel_lengthscale=0.2, seed=SEED):
     rds = np.random.RandomState(seed)
@@ -94,7 +92,7 @@ def generate_meta_data(env_name, num_tasks, num_samples, gp=True, kernel_lengths
         print('\nCollecting data for task %i of %i -----' % (i + 1, num_tasks))
         params = meta_env.sample_env_param()
         if env_name == 'ArgusSimMetaEnv':
-            env = meta_env.env_class(params=params, random_state=meta_env._rds, matlab_engine=meta_env.matlab_engine)
+            env = meta_env.env_class(params=params, random_state=meta_env._rds, matlab_enginge=meta_env.matlab_engine)
         else:
             env = meta_env.env_class(params=params, random_state=meta_env._rds)
         if gp:
@@ -120,8 +118,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate meta-training data')
     parser.add_argument('--gp', action='store_true', help='whether to use gp-ucb to collect the data')
     parser.add_argument('--num_tasks', type=int, default=20, help='number of tasks')
-    parser.add_argument('--num_samples', type=int, default=20, help='number of samples per task')
+    parser.add_argument('--num_samples', type=int, default=50, help='number of samples per task')
     parser.add_argument('--seed', type=int, default=SEED, help='random number generator seed')
-    parser.add_argument('--env', type=str, default='RandomMixtureMetaEnv', help='Environment from which to collect data')
+    parser.add_argument('--env', type=str, default='ArgusSimMetaEnv', help='Environment from which to collect data')
     args = parser.parse_args()
     main(args)
