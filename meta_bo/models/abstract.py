@@ -14,7 +14,7 @@ class RegressionModel:
         torch.manual_seed(self._rds.randint(0, 10**7))
 
 
-    def predict(self, test_x, return_density=False, **kwargs):
+    def predict(self, test_x: np.ndarray, return_density: bool = False, include_obs_noise: bool = True, **kwargs):
         raise NotImplementedError
 
     def eval(self, test_x, test_y, **kwargs):

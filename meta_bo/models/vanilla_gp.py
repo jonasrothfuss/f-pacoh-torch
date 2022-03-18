@@ -49,7 +49,7 @@ class GPRegressionVanilla(RegressionModel):
         self._reset_data()
         self.gp = lambda x: self._prior(x)
 
-    def predict(self, test_x, return_density=False, **kwargs):
+    def predict(self, test_x: np.ndarray, return_density: bool = False, include_obs_noise: bool = True, **kwargs):
         """
         computes the predictive distribution of the targets p(t|test_x, train_x, train_y)
 
@@ -67,7 +67,9 @@ class GPRegressionVanilla(RegressionModel):
             test_x_normalized = self._normalize_data(test_x)
             test_x_tensor = torch.from_numpy(test_x_normalized).to(device)
 
-            pred_dist = self.likelihood(self.gp(test_x_tensor))
+            pred_dist = self.gp(test_x_tensor)
+            if include_obs_noise:
+                pred_dist = self.likelihood(pred_dist)
             pred_dist_transformed = AffineTransformedDistribution(pred_dist, normalization_mean=self.y_mean,
                                                                   normalization_std=self.y_std)
             if return_density:

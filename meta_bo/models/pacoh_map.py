@@ -86,7 +86,7 @@ class PACOH_MAP_GP(RegressionModelMetaLearned):
         self.reset_to_prior()
         return loss
 
-    def predict(self, test_x, return_density=False, **kwargs):
+    def predict(self, test_x: np.ndarray, return_density: bool = False, include_obs_noise: bool = True, **kwargs):
         if test_x.ndim == 1:
             test_x = np.expand_dims(test_x, axis=-1)
 
@@ -94,7 +94,9 @@ class PACOH_MAP_GP(RegressionModelMetaLearned):
             test_x_normalized = self._normalize_data(test_x)
             test_x_tensor = torch.from_numpy(test_x_normalized).float().to(device)
 
-            pred_dist = self.likelihood(self.gp(test_x_tensor))
+            pred_dist = self.gp(test_x_tensor)
+            if include_obs_noise:
+                pred_dist = self.likelihood(pred_dist)
             pred_dist_transformed = AffineTransformedDistribution(pred_dist, normalization_mean=self.y_mean,
                                                                   normalization_std=self.y_std)
             if return_density:
