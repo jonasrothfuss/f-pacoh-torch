@@ -363,15 +363,15 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
 
 
 if __name__ == "__main__":
-    from experiments.data_sim import GPFunctionsDataset, SinusoidDataset
+    from meta_bo.meta_environment import RandomMixtureMetaEnv
 
-    data_sim = SinusoidDataset(random_state=np.random.RandomState(29))
-    meta_train_data = data_sim.generate_meta_train_data(n_tasks=20, n_samples=10)
-    meta_test_data = data_sim.generate_meta_test_data(n_tasks=50, n_samples_context=10, n_samples_test=160)
+    meta_env = RandomMixtureMetaEnv(random_state=np.random.RandomState(29))
+    meta_train_data = meta_env.generate_uniform_meta_train_data(num_tasks=20, num_points_per_task=10)
+    meta_test_data = meta_env.generate_uniform_meta_valid_data(num_tasks=50, num_points_context=10, num_points_test=160)
 
-    NN_LAYERS = (32, 32, 32, 32)
+    NN_LAYERS = (32, 32)
 
-    plot = False
+    plot = True
     from matplotlib import pyplot as plt
 
     if plot:
@@ -386,25 +386,24 @@ if __name__ == "__main__":
 
     torch.set_num_threads(2)
 
-    for weight_decay in [0.8, 0.5, 0.4, 0.3, 0.2, 0.1]:
-        gp_model = GPRegressionMetaLearned(meta_train_data, num_iter_fit=20000, weight_decay=weight_decay, task_batch_size=2,
-                                             covar_module='NN', mean_module='NN', mean_nn_layers=NN_LAYERS,
-                                             kernel_nn_layers=NN_LAYERS)
-        itrs = 0
-        print("---- weight-decay =  %.4f ----"%weight_decay)
-        for i in range(10):
-            gp_model.meta_fit(meta_valid_tuples=meta_test_data, log_period=1000, n_iter=2000)
-            itrs += 2000
+    prior_factor = 1e-3
+    gp_model = FPACOH_MAP_GP(domain=meta_env.domain, num_iter_fit=20000, weight_decay=1e-4, prior_factor=prior_factor,
+                             task_batch_size=2, covar_module='NN', mean_module='NN',
+                             mean_nn_layers=NN_LAYERS, kernel_nn_layers=NN_LAYERS)
+    itrs = 0
+    for i in range(10):
+        gp_model.meta_fit(meta_train_data, meta_valid_tuples=meta_test_data, log_period=1000, n_iter=200)
+        itrs += 200
 
-            x_plot = np.linspace(-5, 5, num=150)
-            x_context, t_context, x_test, y_test = meta_test_data[0]
-            pred_mean, pred_std = gp_model.predict(x_context, t_context, x_plot)
-            ucb, lcb = gp_model.confidence_intervals(x_context, t_context, x_plot, confidence=0.9)
+        x_plot = np.linspace(meta_env.domain.l, meta_env.domain.u, num=150)
+        x_context, t_context, x_test, y_test = meta_test_data[0]
+        pred_mean, pred_std = gp_model.meta_predict(x_context, t_context, x_plot)
+        ucb, lcb = (pred_mean + 2 * pred_std).flatten(), (pred_mean - 2 * pred_std).flatten()
 
-            plt.scatter(x_test, y_test)
-            plt.scatter(x_context, t_context)
+        plt.scatter(x_test, y_test)
+        plt.scatter(x_context, t_context)
 
-            plt.plot(x_plot, pred_mean)
-            plt.fill_between(x_plot, lcb, ucb, alpha=0.2)
-            plt.title('GPR meta mll (weight-decay =  %.4f) itrs = %i' % (weight_decay, itrs))
-            plt.show()
+        plt.plot(x_plot, pred_mean)
+        plt.fill_between(x_plot.flatten(), lcb, ucb, alpha=0.2)
+        plt.title('GPR meta mll (prior_factor =  %.4f) itrs = %i' % (prior_factor, itrs))
+        plt.show()
