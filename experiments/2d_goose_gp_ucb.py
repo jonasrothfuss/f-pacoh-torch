@@ -8,7 +8,7 @@ from meta_bo.models.vanilla_gp import GPRegressionVanilla
 from meta_bo.domain import DiscreteDomain
 
 def main():
-    env = MixtureEnvironment()
+    env = BraninEnvironment()
     model = GPRegressionVanilla(input_dim=env.domain.d, normalization_stats=env.normalization_stats,
                                 normalize_data=True)
 
@@ -16,20 +16,13 @@ def main():
                                        normalize_data=True)
 
     x_plot = np.expand_dims(np.linspace(-10, 10, 200), axis=-1)
-    # f = env.f(x_plot)
-    # q = env.q_constraint(x_plot)
-    # plt.plot(x_plot, f, label='f(x)')
-    # plt.plot(x_plot, q, label='q(x)')
-    # plt.plot(x_plot, np.zeros(x_plot.shape[0]), label='0', linestyle='--')
-    # plt.legend()
-    # plt.show()
 
     domain = DiscreteDomain.uniform_from_continuous_domain(env.domain)
-    algo = GooseUCB(model, model_constr, domain, beta=2.0, x0=np.zeros(1))
+    algo = GooseUCB(model, model_constr, domain, beta=2.0, x0= 6 * np.ones(env.domain.d))
     evals = []
 
 
-    for t in range(50):
+    for t in range(200):
         x = algo.next()
         x_bp = algo.best_predicted()
         evaluation = env.evaluate(x, x_bp=x_bp)
@@ -40,30 +33,23 @@ def main():
         algo.add_data(evaluation['x'], evaluation['y'], evaluation['q'])
 
         if t % 1 == 0 and t > 1:
-            x_plot = np.expand_dims(np.linspace(-10, 10, 200), axis=-1)
-            pred_mean, pred_std = model.predict(x_plot)
-            pred_mean_constr, pred_std_constr = model_constr.predict(x_plot)
-
             fig, axes = plt.subplots(ncols=2, figsize=(8, 4))
-            axes[0].plot(x_plot, pred_mean, label='pred fun')
-            axes[0].fill_between(np.squeeze(x_plot), pred_mean - 2 * pred_std, pred_mean + 2 * pred_std, alpha=0.25)
-            axes[0].plot(x_plot, env.f(x_plot), label='target fun')
-            axes[0].scatter(evals_stacked['x'], evals_stacked['y'], label='evaluations')
-            axes[0].legend()
+            x1, x2 = np.meshgrid(np.arange(env.domain.l[0], env.domain.u[0], 0.05),
+                                 np.arange(env.domain.l[1], env.domain.u[1], 0.05))
+            f = env.f(np.stack([x1.flatten(), x2.flatten()], axis=-1)).reshape(x1.shape)
+            q = env.q_constraint(np.stack([x1.flatten(), x2.flatten()], axis=-1)).reshape(x1.shape)
+            contour_f = axes[0].contour(x1, x2, f, origin='lower')
+            axes[0].scatter(evals_stacked['x'][:, 0], evals_stacked['x'][:, 1])
 
-            axes[1].plot(x_plot, pred_mean_constr, label='pred constr.')
-            axes[1].fill_between(np.squeeze(x_plot), pred_mean_constr - 2 * pred_std_constr,
-                                 pred_mean_constr + 2 * pred_std_constr, alpha=0.25)
-            axes[1].plot(x_plot, env.q_constraint(x_plot), label='true constr.')
-            axes[1].plot(x_plot, np.zeros(x_plot.shape[0]), label='safety threshold', linestyle='--')
-            axes[1].scatter(evals_stacked['x'], evals_stacked['q'], label='constr. evals')
-            axes[1].legend()
+            # pessimistic_safe_set, optimistic_safe_set, uncertain_safety_set, informative_expanders = algo.get_safe_sets()
+            #xes[1].scatter(uncertain_safety_set[:, 0], uncertain_safety_set[:, 1])
+            # axes[1].scatter(pessimistic_safe_set[:, 0], pessimistic_safe_set[:, 1])
+            pessimistic_safe_set = algo._is_in_pessimistic_safe_set(np.stack([x1.flatten(), x2.flatten()], axis=-1)).astype(np.float)
 
-            pessimistic_safe_set, optimistic_safe_set, uncertain_safety_set, informative_expanders = algo.get_safe_sets()
+            axes[1].pcolormesh(x1, x2, pessimistic_safe_set.reshape(x1.shape), cmap='copper')
 
-            axes[1].scatter(pessimistic_safe_set, -0.8 * np.ones_like(pessimistic_safe_set))
-            axes[1].scatter(optimistic_safe_set, -0.9 * np.ones_like(optimistic_safe_set))
-            axes[1].scatter(uncertain_safety_set, -1.0 * np.ones_like(uncertain_safety_set))
+            axes[1].contour(x1, x2, q, levels=[0,], origin='lower')
+            plt.colorbar(contour_f)
             plt.show()
 
 

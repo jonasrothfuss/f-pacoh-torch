@@ -78,7 +78,7 @@ class BenchmarkEnvironment(Environment):
         elif isinstance(self.domain, DiscreteDomain):
             return np.argmin(self.f(self.domain.points))
 
-    @property
+    @cached_property
     def normalization_stats(self):
         if isinstance(self.domain, ContinuousDomain):
             x_points = np.random.uniform(self.domain.l, self.domain.u, size=(1000 * self.domain.d**2, self.domain.d))
@@ -96,7 +96,7 @@ class BenchmarkEnvironment(Environment):
         }
         return stats
 
-    @property
+    @cached_property
     def normalization_stats_constr(self):
         assert self.has_constraint
         if isinstance(self.domain, ContinuousDomain):
@@ -158,7 +158,7 @@ class BraninEnvironment(BenchmarkEnvironment):
             x1 = x1 / 5. - 1
             x2 = x2 /  5. - 1
             return params['constr_a'] * x1**2 - 1.05 * x1**4 + x1**6 / 6. + x1 * params['constr_b'] * x2 + x2**2 - 1.
-        self.q = q
+        self.q_constraint = q
 
 
 class MixtureEnvironment(BenchmarkEnvironment):

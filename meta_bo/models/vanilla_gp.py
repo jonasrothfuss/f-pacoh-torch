@@ -94,7 +94,6 @@ class GPRegressionVanilla(RegressionModel):
     def _vectorize_pred_dist(self, pred_dist):
         return torch.distributions.Normal(pred_dist.mean, pred_dist.stddev)
 
-
 if __name__ == "__main__":
     import torch
     import numpy as np
