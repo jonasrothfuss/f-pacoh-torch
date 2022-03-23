@@ -5,8 +5,9 @@ import scipy.optimize
 import copy
 import inspect
 
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Optional, List
 from collections import OrderedDict
+
 
 class Solver:
 
@@ -195,7 +196,7 @@ class DoubleSolverWrapper:
     """
     Wraps a solver and minimizes the provided function with it twice. Only if the difference of both
     independent solutions is smaller than the tolerance, it returns the minimum, otherwise it repeats the
-    minimizations.
+    minimizations, potentially with increased effort.
     """
 
     def __init__(self, solver: Solver,

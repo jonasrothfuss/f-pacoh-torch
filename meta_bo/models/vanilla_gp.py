@@ -1,9 +1,8 @@
 import gpytorch
-import time
-import torch
 import numpy as np
+import torch
 
-from meta_bo.models.models import LearnedGPRegressionModel, NeuralNetwork, AffineTransformedDistribution
+from meta_bo.models.models import LearnedGPRegressionModel, AffineTransformedDistribution
 from meta_bo.models.abstract import RegressionModel
 from config import device
 
@@ -95,8 +94,6 @@ class GPRegressionVanilla(RegressionModel):
         return torch.distributions.Normal(pred_dist.mean, pred_dist.stddev)
 
 if __name__ == "__main__":
-    import torch
-    import numpy as np
     from matplotlib import pyplot as plt
 
     n_train_samples = 20

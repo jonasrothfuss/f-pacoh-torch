@@ -1,11 +1,9 @@
 numpy
-torch==1.7.1
-gpytorch==1.0.1
-absl-py
-pyro-ppl
-future
-pandas
-scipy
+torch
+gpytorch
 matplotlib
-absl-py
+scipy
 pandas
+absl-py
+
+

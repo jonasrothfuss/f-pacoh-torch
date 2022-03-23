@@ -1,6 +1,5 @@
-from absl import logging
 from meta_bo.domain import ContinuousDomain
-
+import warnings
 import numpy as np
 
 class Algorithm:
@@ -35,7 +34,7 @@ class Algorithm:
 
     def _next(self, context=None):
         """
-        Called by next(), used to get proposed parameter.
+        Called by next(), uxsed to get proposed parameter.
         Opposed to ``next()``, does return only x, not a tuple.
         Returns: parameter x
         """
@@ -68,7 +67,8 @@ class Algorithm:
         # for continuous domains, check if x is inside box
         if isinstance(self.domain, ContinuousDomain):
             if (x > self.domain.u).any() or (x < self.domain.l).any():
-                logging.warning(f'Point outside domain. Projecting back into box.\nx is {x}, with limits {self.domain.l}, {self.domain.u}')
+                warnings.warn('Point outside domain. Projecting back into box.'
+                              f'\nx is {x}, with limits {self.domain.l}, {self.domain.u}')
                 x = np.maximum(np.minimum(x, self.domain.u), self.domain.l)
 
         return x, additional_data

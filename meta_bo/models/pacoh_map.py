@@ -2,7 +2,6 @@ import torch
 import gpytorch
 import time
 import numpy as np
-from absl import logging
 
 from meta_bo.models.models import LearnedGPRegressionModel, NeuralNetwork, AffineTransformedDistribution
 from meta_bo.models.util import _handle_input_dimensionality, DummyLRScheduler
@@ -73,7 +72,7 @@ class PACOH_MAP_GP(RegressionModelMetaLearned):
                     message += ' - Valid-LL: %.3f - Valid-RMSE: %.3f - Calib-Err %.3f' % (valid_ll, valid_rmse, calibr_err)
 
                 if verbose:
-                    logging.info(message)
+                    print(message)
 
         self.fitted = True
 

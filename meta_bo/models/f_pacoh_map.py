@@ -3,25 +3,54 @@ import gpytorch
 import time
 import math
 import numpy as np
-from absl import logging
 from torch.distributions import Uniform, MultivariateNormal, kl_divergence
 
 from meta_bo.models.models import LearnedGPRegressionModel, NeuralNetwork, AffineTransformedDistribution, SEKernelLight
 from meta_bo.models.util import _handle_input_dimensionality, DummyLRScheduler
 from meta_bo.models.abstract import RegressionModelMetaLearned
-from meta_bo.domain import ContinuousDomain, DiscreteDomain
+from meta_bo.domain import Domain, ContinuousDomain, DiscreteDomain
 from config import device
 
+from typing import List, Optional, Dict
 
 
 class FPACOH_MAP_GP(RegressionModelMetaLearned):
 
-    def __init__(self, domain, learning_mode='both', weight_decay=0.0, feature_dim=2, num_iter_fit=10000,
-                 covar_module='NN', mean_module='NN', mean_nn_layers=(32, 32, 32), kernel_nn_layers=(32, 32, 32),
-                 prior_lengthscale=0.2, prior_outputscale=2.0, prior_kernel_noise=1e-3, train_data_in_kl=True,
-                 num_samples_kl=20, task_batch_size=5, lr=1e-3, lr_decay=1.0, normalize_data=True,
-                 prior_factor=0.1, normalization_stats=None, random_state=None):
+    def __init__(self, domain: Domain, learning_mode: str = 'both', weight_decay: float = 0.0, feature_dim: int = 2,
+                 num_iter_fit: int = 10000, covar_module: str = 'NN', mean_module: str = 'NN',
+                 mean_nn_layers: List[int] = (32, 32, 32), kernel_nn_layers: List[int] = (32, 32, 32),
+                 prior_lengthscale: float = 0.2, prior_outputscale: float = 2.0, prior_kernel_noise: float = 1e-3,
+                 train_data_in_kl: bool = True, num_samples_kl: int = 20, task_batch_size: int = 10, lr: float = 1e-3,
+                 lr_decay: float = 1.0, prior_factor: float = 0.1, normalize_data: bool = True,
+                 normalization_stats: Optional[Dict] = None, random_state: Optional[np.random.RandomState] = None):
+        """
 
+        Args:
+            domain: data domain
+            learning_mode: one of ['both', 'mean', 'kernel', 'vanilla']. Indicates whether to train both the kernel
+                           and the mean function or only one of them.
+            weight_decay: amount of weight decay to use for meta-training
+            feature_dim: dimensionality of the latent feature space of the kernel map
+            num_iter_fit: number of meta-training iterations
+            covar_module: one of ['NN', 'SE']. how to parametrize the kernel function.
+            mean_module: one of ['NN', 'constant', 'zero]. how to parametrize the mean function.
+            mean_nn_layers: hidden layer sizes of the mean NN
+            kernel_nn_layers: hidden layer sizes of the kernel feature map NN
+            prior_lengthscale: lengthscale of the SE hyper-prior
+            prior_outputscale: outputscale / variance of the SE hyper-prior
+            prior_kernel_noise: magnitude of identity matrix to add to hyper-prior kernel matrix
+                                for numerical stability
+            train_data_in_kl: whether to include the meta-train data in the computation of the functional KL or only
+                              to use the uniformly sampled measurement sets
+            num_samples_kl: size of measurement set that is used to compute the functional kl
+            task_batch_size: task batch size
+            lr: Adam learning rate
+            lr_decay: multiplicative learning rate decay factor which is applied every 1000 iter to the lr
+            normalize_data: whether to standardize the data and work in the standardized data space
+            prior_factor: multiplicative factor for weighting the function KL relative to the mlls
+            normalization_stats: (optional) dict of normalization stats to use for the standardization
+            random_state: (optional) random number generator object
+        """
         super().__init__(normalize_data, random_state)
 
         assert isinstance(domain, ContinuousDomain) or isinstance(domain, DiscreteDomain)
@@ -55,6 +84,7 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
         self.reset_to_prior()
 
         self.fitted = False
+        self._meta_train_iter = 0
 
     def meta_fit(self, meta_train_tuples, meta_valid_tuples=None, verbose=True, log_period=500, n_iter=None):
 
@@ -68,6 +98,8 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
         n_iter = self.num_iter_fit if n_iter is None else n_iter
 
         for itr in range(1, n_iter + 1):
+            self._meta_train_iter += 1
+
             # actual meta-training step
             task_dict_batch = self._rds.choice(task_dicts, size=self.task_batch_size)
             loss = self._step(task_dict_batch, n_tasks=len(task_dicts))
@@ -80,7 +112,8 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
                 cum_loss = 0.0
                 t = time.time()
 
-                message = 'Iter %d/%d - Loss: %.6f - Time %.2f sec' % (itr, self.num_iter_fit, avg_loss, duration)
+                message = 'Iter %d/%d - Loss: %.6f - Time %.2f sec' % (self._meta_train_iter, self.num_iter_fit,
+                                                                       avg_loss, duration)
 
                 # if validation data is provided  -> compute the valid log-likelihood
                 if meta_valid_tuples is not None:
@@ -90,7 +123,7 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
                     message += ' - Valid-LL: %.3f - Valid-RMSE: %.3f - Calib-Err %.3f' % (valid_ll, valid_rmse, calibr_err)
 
                 if verbose:
-                    logging.info(message)
+                    print(message)
 
         self.fitted = True
 
@@ -365,7 +398,7 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
 if __name__ == "__main__":
     from meta_bo.meta_environment import RandomMixtureMetaEnv
 
-    meta_env = RandomMixtureMetaEnv(random_state=np.random.RandomState(29))
+    meta_env = RandomMixtureMetaEnv(random_state=np.random.RandomState(26))
     meta_train_data = meta_env.generate_uniform_meta_train_data(num_tasks=20, num_points_per_task=10)
     meta_test_data = meta_env.generate_uniform_meta_valid_data(num_tasks=50, num_points_context=10, num_points_test=160)
 
@@ -386,14 +419,14 @@ if __name__ == "__main__":
 
     torch.set_num_threads(2)
 
-    prior_factor = 1e-3
+    prior_factor = 1e0
     gp_model = FPACOH_MAP_GP(domain=meta_env.domain, num_iter_fit=20000, weight_decay=1e-4, prior_factor=prior_factor,
                              task_batch_size=2, covar_module='NN', mean_module='NN',
                              mean_nn_layers=NN_LAYERS, kernel_nn_layers=NN_LAYERS)
     itrs = 0
     for i in range(10):
-        gp_model.meta_fit(meta_train_data, meta_valid_tuples=meta_test_data, log_period=1000, n_iter=200)
-        itrs += 200
+        gp_model.meta_fit(meta_train_data, meta_valid_tuples=meta_test_data, log_period=250, n_iter=1000)
+        itrs += 1000
 
         x_plot = np.linspace(meta_env.domain.l, meta_env.domain.u, num=150)
         x_context, t_context, x_test, y_test = meta_test_data[0]

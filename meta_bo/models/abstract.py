@@ -44,12 +44,13 @@ class RegressionModel:
             return avg_log_likelihood.cpu().item(), rmse.cpu().item(), calibr_error.cpu().item(), calibr_error_chi2
 
     def confidence_intervals(self, test_x, confidence=0.9, **kwargs):
-        pred_dist = self.predict(test_x, return_density=True, **kwargs)
-        pred_dist = self._vectorize_pred_dist(pred_dist)
+        with torch.no_grad():
+            pred_dist = self.predict(test_x, return_density=True, **kwargs)
+            pred_dist = self._vectorize_pred_dist(pred_dist)
 
-        alpha = (1 - confidence) / 2
-        ucb = pred_dist.icdf(torch.ones(test_x.size) * (1 - alpha))
-        lcb = pred_dist.icdf(torch.ones(test_x.size) * alpha)
+            alpha = (1 - confidence) / 2
+            ucb = pred_dist.icdf(torch.ones(test_x.size) * (1 - alpha)).numpy()
+            lcb = pred_dist.icdf(torch.ones(test_x.size) * alpha).numpy()
         return ucb, lcb
 
     def _reset_posterior(self):
