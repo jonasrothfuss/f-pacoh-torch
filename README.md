@@ -1,6 +1,10 @@
 # Meta-BO based on F-PACOH
-The repository implements the UCB Bayesian optimization algorithm with support for the following models
-* Vanilla GP
+First and foremost, this repository aims to provide a lightweight and accessible implementation of the F-PACOH algorithm
+presented in the paper [*Meta-Learning Reliable Priors in the Function Space*](https://arxiv.org/abs/2106.03195) by J. Rothfuss, D. Heyn, J. Chen and A. Krause.
+The comprehensive and much more complex code which was used for the paper's experiments can be downloaded [here](https://www.dropbox.com/sh/n2thesjq87sh66j/AACg-HKMl1NhQpaMOHvvUEOfa?dl=0).
+
+In particular, this repository implements the UCB Bayesian optimization algorithm with support for the following models
+* Vanilla GP with SE kernel
 * PACOH-GP [(https://arxiv.org/abs/2002.05551)](https://arxiv.org/abs/2002.05551)
 * F-PACOH-GP [(https://arxiv.org/abs/2106.03195)](https://arxiv.org/abs/2106.03195)
 
