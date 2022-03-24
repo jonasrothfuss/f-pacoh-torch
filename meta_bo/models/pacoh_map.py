@@ -8,6 +8,7 @@ from meta_bo.models.util import _handle_input_dimensionality, DummyLRScheduler
 from meta_bo.models.abstract import RegressionModelMetaLearned
 from config import device
 
+
 class PACOH_MAP_GP(RegressionModelMetaLearned):
 
     def __init__(self, input_dim, learning_mode='both', weight_decay=0.0, feature_dim=2, num_iter_fit=10000,
@@ -105,9 +106,6 @@ class PACOH_MAP_GP(RegressionModelMetaLearned):
                 pred_std = pred_dist_transformed.stddev.cpu().numpy()
                 return pred_mean, pred_std
 
-    def predict_mean_std(self, test_x):
-        return self.predict(test_x, return_density=False)
-
     def meta_predict(self, context_x, context_y, test_x, return_density=False):
         """
         Performs posterior inference (target training) with (context_x, context_y) as training data and then
@@ -152,6 +150,7 @@ class PACOH_MAP_GP(RegressionModelMetaLearned):
             return pred_mean.cpu().numpy(), pred_std.cpu().numpy()
 
     def reset_to_prior(self):
+        """Clears the training data that was added via add_data(X, y) and resets the posterior to the prior."""
         self._reset_data()
         self.gp = lambda x: self._prior(x)
 

@@ -39,7 +39,7 @@ class AcquisitionAlgorithm:
         return x
 
     def best_predicted(self):
-        x_bp, _ = self.solver.minimize(lambda x: self.model.predict_mean_std(x)[0])
+        x_bp, _ = self.solver.minimize(lambda x: self.model.predict(x, return_density=False)[0])
         return x_bp
 
     def _get_solver(self, domain):

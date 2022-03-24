@@ -17,10 +17,36 @@ pip install -r requirements.txt
 ``` 
 
 
-## Usage
-First, add the root of this repository to PYTHONPATH.
+## Basic Usage
+First, add the root of this repository to PYTHONPATH. 
+The following code snippet provides a basic usage example of F-PACOH:
 
-We provide two demo jupyter notebooks for getting started.
+```python
+import numpy as np
+from meta_bo.models.f_pacoh_map import FPACOH_MAP_GP
+
+# generate meta-train data
+from meta_bo.meta_environment import RandomMixtureMetaEnv
+meta_env = RandomMixtureMetaEnv()
+meta_train_tuples = meta_env.generate_uniform_meta_train_data(num_tasks=20, num_points_per_task=10)
+
+# setup and meta-train F-PACOH
+fpacoh_model = FPACOH_MAP_GP(domain=meta_env.domain, num_iter_fit=6000, weight_decay=1e-4,
+                             prior_factor=0.1, task_batch_size=5)
+fpacoh_model.meta_fit(meta_train_tuples)
+
+# make prediction on a new task
+test_env = meta_env.sample_env()  # sample a new task from meta_env
+x_train, y_train = test_env.generate_uniform_data(num_points=5)  # generate train points
+fpacoh_model.add_data(x_train, y_train)  # add train points to model
+
+x_pred = np.linspace(test_env.domain.l, test_env.domain.u, num=100)
+posterior_mean, posterior_std = fpacoh_model.predict(x_pred)
+```
+
+## Demo notebooks and scripts
+
+We provide also two demo jupyter notebooks for getting started.
 * [demo.ipynb](demo.ipynb): A simple, visual demo of Vanilla GPs and F-PACOH for 1d regression.
 * [demo.ipynb](demo.ipynb): A visual demo of 1d Bayesian Optimization problem with Vanilla GPs and F-PACOH + the UCB acquisition algorithm.
 
@@ -36,3 +62,24 @@ To run meta-learning of the GP prior with F-PACOH + GP-UCB, run the following co
 ```bash
 python experiments/meta_gp_ucb.py
 ``` 
+
+## Citing
+For usage of the algorithms provided in this repo for your research,
+we kindly ask you to acknowledge the two papers that formally introduce them:
+```bibtex
+@InProceedings{rothfuss21pacoh,
+  title = 	 {PACOH: Bayes-Optimal Meta-Learning with PAC-Guarantees},
+  author =       {Rothfuss, Jonas and Fortuin, Vincent and Josifoski, Martin and Krause, Andreas},
+  booktitle = 	 {Proceedings of the 38th International Conference on Machine Learning},
+  pages = 	 {9116--9126},
+  year = 	 {2021}
+ }
+
+@InProceedings{rothfuss2021fpacoh,
+  title={Meta-learning reliable priors in the function space},
+  author={Rothfuss, Jonas and Heyn, Dominique and Chen, Jinfan and Krause, Andreas},
+  booktitle={Advances in Neural Information Processing Systems},
+  volume={34},
+  year={2021}
+}
+```

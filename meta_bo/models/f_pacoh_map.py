@@ -11,14 +11,18 @@ from meta_bo.models.abstract import RegressionModelMetaLearned
 from meta_bo.domain import Domain, ContinuousDomain, DiscreteDomain
 from config import device
 
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 
 class FPACOH_MAP_GP(RegressionModelMetaLearned):
+    """
+    Implementation of the F-PACOH-GP algorithm with a GP (SE kernel) as a hyper-prior.
+    Link to the paper 'Meta-Learning Reliable Priors in the Function Space': https://arxiv.org/abs/2106.03195.
+    """
 
     def __init__(self, domain: Domain, learning_mode: str = 'both', weight_decay: float = 0.0, feature_dim: int = 2,
                  num_iter_fit: int = 10000, covar_module: str = 'NN', mean_module: str = 'NN',
-                 mean_nn_layers: List[int] = (32, 32, 32), kernel_nn_layers: List[int] = (32, 32, 32),
+                 mean_nn_layers: List[int] = (32, 32), kernel_nn_layers: List[int] = (32, 32),
                  prior_lengthscale: float = 0.2, prior_outputscale: float = 2.0, prior_kernel_noise: float = 1e-3,
                  train_data_in_kl: bool = True, num_samples_kl: int = 20, task_batch_size: int = 10, lr: float = 1e-3,
                  lr_decay: float = 1.0, prior_factor: float = 0.1, normalize_data: bool = True,
@@ -86,8 +90,22 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
         self.fitted = False
         self._meta_train_iter = 0
 
-    def meta_fit(self, meta_train_tuples, meta_valid_tuples=None, verbose=True, log_period=500, n_iter=None):
+    def meta_fit(self, meta_train_tuples: List[Tuple[np.ndarray, np.ndarray]],
+                 meta_valid_tuples: Optional[List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]] = None,
+                 verbose: bool = True, log_period: int = 500, n_iter: Optional[int] = None):
+        """ Performs the meta-training of the GP prior with the F-PACOH-MAP algorithm.
 
+        Args:
+            meta_train_tuples: lest of meta-train tuples, i.e. [(x_train_1, y_train_1), .... ]
+            meta_valid_tuples: list of meta-valid tuples, i.e. [(test_context_x_1, test_context_t_1,
+                               test_x_1, test_t_1), ...]
+            verbose: whether to print training statistics
+            log_period: number of iterations after which to log
+            n_iter: number of iterations, overwrites the num_iter_fit variable which is set in __init__
+
+        Returns: (float) loss at last iteration
+
+        """
         assert (meta_valid_tuples is None) or (all([len(valid_tuple) == 4 for valid_tuple in meta_valid_tuples]))
         self.likelihood.train()
 
@@ -137,6 +155,21 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
         return loss
 
     def predict(self, test_x: np.ndarray, return_density: bool = False, include_obs_noise: bool = True, **kwargs):
+        """
+        Given the training data that was provided via the add_data(X, y) method, performs posterior predictions
+        for test_x.
+
+        Args:
+            test_x (np.ndarray): the points for which to compute predictions
+            return_density (bool): whether to return a torch distribution object or
+                                   a tuple of (posterior_mean, posterior_std)
+            include_obs_noise (bool): whether to include the likelihood std in the posterior predictions.
+                                      If yes, the predictions correspond to p(y|x, D) otherwise p(f|x, D)
+
+         Returns:
+             Depending on return_density, either a torch distribution or tuple of ndarrays
+             (posterior_mean, posterior_std)
+        """
         if test_x.ndim == 1:
             test_x = np.expand_dims(test_x, axis=-1)
 
@@ -156,10 +189,8 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
                 pred_std = pred_dist_transformed.stddev.cpu().numpy()
                 return pred_mean, pred_std
 
-    def predict_mean_std(self, test_x):
-        return self.predict(test_x, return_density=False)
-
-    def meta_predict(self, context_x, context_y, test_x, return_density=False):
+    def meta_predict(self, context_x: np.ndarray, context_y: np.ndarray, test_x: np.ndarray,
+                     return_density: bool = False):
         """
         Performs posterior inference (target training) with (context_x, context_y) as training data and then
         computes the predictive distribution of the targets p(y|test_x, test_context_x, context_y) in the test points
@@ -171,7 +202,8 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
             return_density: (bool) whether to return result as mean and std ndarray or as MultivariateNormal pytorch object
 
         Returns:
-            (pred_mean, pred_std) predicted mean and standard deviation corresponding to p(t|test_x, test_context_x, context_y)
+            Depending on return_density either (pred_mean, pred_std) posterior mean and standard deviation
+            corresponding to p(test_y|test_x, test_context_x, context_y), or a corresponding torch density object
         """
 
         context_x, context_y = _handle_input_dimensionality(context_x, context_y)
@@ -203,6 +235,7 @@ class FPACOH_MAP_GP(RegressionModelMetaLearned):
             return pred_mean.cpu().numpy(), pred_std.cpu().numpy()
 
     def reset_to_prior(self):
+        """Clears the training data that was added via add_data(X, y) and resets the posterior to the prior."""
         self._reset_data()
         self.gp = lambda x: self._prior(x)
 

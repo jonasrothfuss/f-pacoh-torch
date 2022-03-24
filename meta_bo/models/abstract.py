@@ -1,23 +1,23 @@
 import numpy as np
 import torch
-from meta_bo.models.util import get_logger, _handle_input_dimensionality
+from meta_bo.models.util import _handle_input_dimensionality
 from config import device
+from typing import Tuple, Optional, List
 
 
 class RegressionModel:
 
-    def __init__(self, normalize_data=True, random_state=None):
+    def __init__(self, normalize_data: bool = True, random_state=None):
         self.normalize_data = normalize_data
         self.input_dim = None
 
         self._rds = random_state if random_state is not None else np.random
         torch.manual_seed(self._rds.randint(0, 10**7))
 
-
     def predict(self, test_x: np.ndarray, return_density: bool = False, include_obs_noise: bool = True, **kwargs):
         raise NotImplementedError
 
-    def eval(self, test_x, test_y, **kwargs):
+    def eval(self, test_x: np.ndarray, test_y: np.ndarray, **kwargs) -> Tuple[float, float]:
         """
         Computes the average test log likelihood and the rmse on test data
 
@@ -43,7 +43,7 @@ class RegressionModel:
 
             return avg_log_likelihood.cpu().item(), rmse.cpu().item(), calibr_error.cpu().item(), calibr_error_chi2
 
-    def confidence_intervals(self, test_x, confidence=0.9, **kwargs):
+    def confidence_intervals(self, test_x: np.ndarray, confidence=0.9, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
         with torch.no_grad():
             pred_dist = self.predict(test_x, return_density=True, **kwargs)
             pred_dist = self._vectorize_pred_dist(pred_dist)
@@ -75,7 +75,8 @@ class RegressionModel:
             raise AssertionError('y must not have more than 1 dim')
         return X, y
 
-    def add_data(self, X, y):
+    def add_data(self, X: np.ndarray, y: np.ndarray):
+        """Adds data to the training dataset which is used to form the posterior."""
         assert X.ndim == 1 or X.ndim == 2
 
         # handle input dimensionality
@@ -127,7 +128,7 @@ class RegressionModel:
             self.x_mean, self.y_mean = np.zeros(X.shape[1]), np.zeros(Y.shape[1])
             self.x_std, self.y_std = np.ones(X.shape[1]), np.ones(Y.shape[1])
 
-    def _normalize_data(self, X, Y=None):
+    def _normalize_data(self, X: np.ndarray, Y: Optional[np.ndarray] = None):
         assert hasattr(self, "x_mean") and hasattr(self, "x_std"), "requires computing normalization stats beforehand"
         assert hasattr(self, "y_mean") and hasattr(self, "y_std"), "requires computing normalization stats beforehand"
 
@@ -155,7 +156,7 @@ class RegressionModel:
 
         return pred_mean, pred_std
 
-    def _initial_data_handling(self, train_x, train_t):
+    def _initial_data_handling(self, train_x: np.ndarray, train_t: np.ndarray):
         train_x, train_t = _handle_input_dimensionality(train_x, train_t)
         self.input_dim, self.output_dim = train_x.shape[-1], train_t.shape[-1]
         self.n_train_samples = train_x.shape[0]
@@ -178,7 +179,7 @@ class RegressionModelMetaLearned(RegressionModel):
     def meta_predict(self, context_x, context_y, test_x, return_density=False):
         raise NotImplementedError
 
-    def eval_datasets(self, test_tuples, **kwargs):
+    def eval_datasets(self, test_tuples: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]], **kwargs):
         """
         Performs meta-testing on multiple tasks / datasets.
         Computes the average test log likelihood, the rmse and the calibration error over multiple test datasets
@@ -196,7 +197,9 @@ class RegressionModelMetaLearned(RegressionModel):
 
         return np.mean(ll_list), np.mean(rmse_list), np.mean(calibr_err_list), np.mean(calibr_err_chi2_list)
 
-    def meta_eval(self,  context_x, context_y, test_x, test_y):
+    def meta_eval(self, context_x: np.ndarray, context_y: np.ndarray, test_x: np.ndarray,
+                  test_y: np.ndarray) -> Tuple[float, float, float, float]:
+        """Fits a posterior with the context data and evaluates the posterior predictions on the test data."""
         test_x, test_y = _handle_input_dimensionality(test_x, test_y)
         test_y_tensor = torch.from_numpy(test_y).contiguous().float().flatten().to(device)
 
@@ -211,7 +214,7 @@ class RegressionModelMetaLearned(RegressionModel):
 
             return avg_log_likelihood.cpu().item(), rmse.cpu().item(), calibr_error.cpu().item(), calibr_error_chi2
 
-    def _compute_meta_normalization_stats(self, meta_train_tuples):
+    def _compute_meta_normalization_stats(self, meta_train_tuples: List[Tuple[np.ndarray, np.ndarray]]):
         X_stack, Y_stack = list(zip(*[_handle_input_dimensionality(x_train, y_train) for x_train, y_train in meta_train_tuples]))
         X, Y = np.concatenate(X_stack, axis=0), np.concatenate(Y_stack, axis=0)
 
@@ -222,13 +225,13 @@ class RegressionModelMetaLearned(RegressionModel):
             self.x_mean, self.y_mean = np.zeros(X.shape[1]), np.zeros(Y.shape[1])
             self.x_std, self.y_std = np.ones(X.shape[1]), np.ones(Y.shape[1])
 
-    def _check_meta_data_shapes(self, meta_train_data):
-        for i in range(len(meta_train_data)):
-            meta_train_data[i] = _handle_input_dimensionality(*meta_train_data[i])
-        self.input_dim = meta_train_data[0][0].shape[-1]
-        self.output_dim = meta_train_data[0][1].shape[-1]
+    def _check_meta_data_shapes(self, meta_train_tuples: List[Tuple[np.ndarray, np.ndarray]]):
+        for i in range(len(meta_train_tuples)):
+            meta_train_tuples[i] = _handle_input_dimensionality(*meta_train_tuples[i])
+        self.input_dim = meta_train_tuples[0][0].shape[-1]
+        self.output_dim = meta_train_tuples[0][1].shape[-1]
 
-        assert all([self.input_dim == train_x.shape[-1] and self.output_dim == train_t.shape[-1] for train_x, train_t in meta_train_data])
+        assert all([self.input_dim == train_x.shape[-1] and self.output_dim == train_t.shape[-1] for train_x, train_t in meta_train_tuples])
 
     def _prepare_data_per_task(self, x_data, y_data, flatten_y=True):
         # a) make arrays 2-dimensional

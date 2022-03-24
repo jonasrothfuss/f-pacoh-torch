@@ -4,17 +4,35 @@ import torch
 
 from meta_bo.models.models import LearnedGPRegressionModel, AffineTransformedDistribution
 from meta_bo.models.abstract import RegressionModel
+from typing import Optional, Dict
 from config import device
 
 
 class GPRegressionVanilla(RegressionModel):
 
-    def __init__(self, input_dim, kernel_variance=2.0, kernel_lengthscale=0.2, likelihood_std=0.05,
-                 normalize_data=True, normalization_stats=None, random_state=None):
+    """
+    A Vanilla GP with a Squared-Exponential (SE) Kernel
+    """
+
+    def __init__(self, input_dim: int, kernel_variance: float = 2.0, kernel_lengthscale: float = 0.2,
+                 likelihood_std: float = 0.05, normalize_data: bool = True, normalization_stats: Optional[Dict] = None,
+                 random_state: Optional[np.random.RandomState] = None):
+        """ Initializes the GP
+
+        Args:
+            input_dim: number of dimensions of x
+            kernel_variance: output scale / variance of the SE kernel
+            kernel_lengthscale: lengthscale of the SE kernel
+            likelihood_std: likelihood std
+            normalize_data: whether to standardize the data and work in the standardized data space
+            normalization_stats: (optional) dict of normalization stats to use for the standardization
+            random_state: (optional) random number generator object
+        """
 
         super().__init__(normalize_data=normalize_data, random_state=random_state)
 
         """  ------ Setup model ------ """
+        assert input_dim > 0
         self.input_dim = input_dim
 
         self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=self.input_dim)).to(device)
@@ -45,19 +63,25 @@ class GPRegressionVanilla(RegressionModel):
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
     def reset_to_prior(self):
+        """Clears the training data that was added via add_data(X, y) and resets the posterior to the prior."""
         self._reset_data()
         self.gp = lambda x: self._prior(x)
 
     def predict(self, test_x: np.ndarray, return_density: bool = False, include_obs_noise: bool = True, **kwargs):
         """
-        computes the predictive distribution of the targets p(t|test_x, train_x, train_y)
+        Given the training data that was provided via the add_data(X, y) method, performs posterior predictions
+        for test_x.
 
         Args:
-            test_x: (ndarray) query input data of shape (n_samples, ndim_x)
-            return_density (bool) whether to return a density object or
+            test_x (np.ndarray): the points for which to compute predictions
+            return_density (bool): whether to return a torch distribution object or
+                                   a tuple of (posterior_mean, posterior_std)
+            include_obs_noise (bool): whether to include the likelihood std in the posterior predictions.
+                                      If yes, the predictions correspond to p(y|x, D) otherwise p(f|x, D)
 
-        Returns:
-            (pred_mean, pred_std) predicted mean and standard deviation corresponding to p(y_test|X_test, X_train, y_train)
+         Returns:
+             Depending on return_density, either a torch distribution or tuple of ndarrays
+             (posterior_mean, posterior_std)
         """
         if test_x.ndim == 1:
             test_x = np.expand_dims(test_x, axis=-1)
@@ -78,9 +102,6 @@ class GPRegressionVanilla(RegressionModel):
                 pred_std = pred_dist_transformed.stddev.cpu().numpy()
                 return pred_mean, pred_std
 
-    def predict_mean_std(self, test_x):
-        return self.predict(test_x, return_density=False)
-
     def state_dict(self):
         state_dict = {
             'model': self.gp.state_dict(),
@@ -92,6 +113,7 @@ class GPRegressionVanilla(RegressionModel):
 
     def _vectorize_pred_dist(self, pred_dist):
         return torch.distributions.Normal(pred_dist.mean, pred_dist.stddev)
+
 
 if __name__ == "__main__":
     from matplotlib import pyplot as plt
