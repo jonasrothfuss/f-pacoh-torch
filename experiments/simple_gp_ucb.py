@@ -7,13 +7,14 @@ from meta_bo.algorithms.acquisition import UCB
 from meta_bo.models.vanilla_gp import GPRegressionVanilla
 
 def main():
-    env = BraninEnvironment()
+    rds = np.random.RandomState(134)
+    env = BraninEnvironment(random_state=rds)
     model = GPRegressionVanilla(input_dim=env.domain.d, normalization_stats=env.normalization_stats,
-                                normalize_data=True, kernel_lengthscale=0.3)
-    algo = UCB(model, env.domain, beta=2.0)
+                                normalize_data=True, kernel_lengthscale=0.3, random_state=rds)
+    algo = UCB(model, env.domain, beta=2.0, random_state=rds)
     evals = []
 
-    for t in range(200):
+    for t in range(100):
         x = algo.next()
         x_bp = algo.best_predicted()
         evaluation = env.evaluate(x, x_bp=x_bp)
@@ -22,7 +23,7 @@ def main():
 
         algo.add_data(evaluation['x'], evaluation['y'])
 
-        if t % 40 == 0 and t > 1:
+        if t % 20 == 0 and t > 1:
             if env.domain.d == 1:
                 x_plot = np.expand_dims(np.linspace(-10, 10, 200), axis=-1)
                 pred_mean, pred_std = model.predict(x_plot)
@@ -31,13 +32,15 @@ def main():
                 plt.scatter(evals_stacked['x'], evals_stacked['y'])
                 plt.show()
             elif env.domain.d == 2:
+                fig, ax = plt.subplots(1, 1)
                 x1, x2 = np.meshgrid(np.linspace(env.domain.l[0], env.domain.u[0], 100),
                                      np.linspace(env.domain.l[1], env.domain.u[1], 100))
                 f = env.f(np.stack([x1.flatten(), x2.flatten()], axis=-1)).reshape(x1.shape)
-                contour_f = plt.contour(x1, x2, f, origin='lower', locator=ticker.LogLocator())
-                plt.scatter(evals_stacked['x'][:, 0], evals_stacked['x'][:, 1])
-                plt.colorbar(contour_f)
-                plt.show()
+                contour_f = ax.contour(x1, x2, f, origin='lower', locator=ticker.LogLocator())
+                ax.scatter(evals_stacked['x'][:, 0], evals_stacked['x'][:, 1])
+                fig.colorbar(contour_f)
+                fig.show()
+                print(f'iter {t}')
 
 
     """ plot regret """

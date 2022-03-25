@@ -1,39 +1,35 @@
 from matplotlib import pyplot as plt, ticker
 import numpy as np
+import time
 
 from meta_bo.meta_environment import RandomBraninMetaEnv
 from meta_bo.environment import BraninEnvironment
 from meta_bo.algorithms.acquisition import UCB
 from meta_bo.models.f_pacoh_map import FPACOH_MAP_GP
 
-import time
-t = time.time()
 
-rds = np.random.RandomState(567)
+
+rds = np.random.RandomState(134)
 
 meta_env = RandomBraninMetaEnv(random_state=rds)
 meta_train_data = meta_env.generate_uniform_meta_train_data(100, 50)
 meta_valid_data = meta_env.generate_uniform_meta_valid_data(40, 20, 100)
-print('time to generate data: %.2f sec'%(time.time() - t))
 
-
-MODEL = 'FPACOH'
-NN_LAYERS = [32, 32]
-
+NN_LAYERS = [32, 32, 32]
 model = FPACOH_MAP_GP(domain=meta_env.domain, normalization_stats=meta_env.normalization_stats,
-                      num_iter_fit=10000, weight_decay=1e-4, prior_factor=0.5, num_samples_kl=40,
+                      num_iter_fit=10000, weight_decay=1e-4, prior_factor=0.045, num_samples_kl=40,
                       mean_nn_layers=NN_LAYERS, kernel_nn_layers=NN_LAYERS, prior_lengthscale=0.3,
                       task_batch_size=10,  random_state=rds)
 
 model.meta_fit(meta_train_data, meta_valid_tuples=meta_valid_data, log_period=1000)
 
 
-algo = UCB(model, meta_env.domain, beta=2.0)
+algo = UCB(model, meta_env.domain, beta=2.0, random_state=rds)
 evals = []
 
-env = BraninEnvironment()
+env = BraninEnvironment(random_state=rds)
 
-for t in range(200):
+for t in range(100):
     x = algo.next()
     x_bp = algo.best_predicted()
     evaluation = env.evaluate(x, x_bp=x_bp)
@@ -42,7 +38,7 @@ for t in range(200):
 
     algo.add_data(evaluation['x'], evaluation['y'])
 
-    if t % 40 == 0 and t > 1:
+    if t % 20 == 0 and t > 1:
         if env.domain.d == 1:
             x_plot = np.expand_dims(np.linspace(-10, 10, 200), axis=-1)
             pred_mean, pred_std = model.predict(x_plot)
@@ -80,5 +76,6 @@ axes[1].set_ylabel('cumulative inference regret')
 axes[1].set_xlabel('t')
 fig.tight_layout()
 fig.show()
+fig.save_fig()
 
 
